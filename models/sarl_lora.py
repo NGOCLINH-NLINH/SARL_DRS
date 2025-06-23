@@ -100,7 +100,6 @@ class SARLLoRA(ContinualModel):
         self.drs_projection = None
 
     def begin_task(self, dataset):
-        super().begin_task(dataset)
         if self.current_task > 0:
             self.drs_projection = compute_drs_projection(self.net, dataset.train_loader, device=self.device)
         else:
