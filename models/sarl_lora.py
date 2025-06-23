@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader
 from copy import deepcopy
 from utils.buffer import Buffer
 from utils.args import *
-from utils.drs_utils import compute_drs_projection
+from models.utils.drs_utils import compute_drs_projection
 from models.utils.continual_model import ContinualModel
 from backbone.MNISTMLP import SparseMNISTMLP
 from backbone.SparseResNet18 import sparse_resnet18
