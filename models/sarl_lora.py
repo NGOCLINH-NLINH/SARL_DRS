@@ -178,12 +178,24 @@ class SARLLoRA(ContinualModel):
         if torch.isnan(loss):
             raise ValueError('NAN Loss')
 
+        # if self.drs_projection is not None:
+        #     grads = torch.autograd.grad(loss, self.net.parameters(), create_graph=True, retain_graph=True)
+        #     for (name, p), g, P in zip(self.net.named_parameters(), grads, self.drs_projection):
+        #         if g is not None and p.requires_grad:
+        #             projected = P @ (P.T @ g.view(-1))
+        #             p.grad = projected.view_as(p)
+        # else:
+        #     loss.backward()
+
         if self.drs_projection is not None:
             grads = torch.autograd.grad(loss, self.net.parameters(), create_graph=True, retain_graph=True)
-            for (name, p), g, P in zip(self.net.named_parameters(), grads, self.drs_projection):
-                if g is not None and p.requires_grad:
+            for (name, p), g in zip(self.net.named_parameters(), grads):
+                if g is not None and p.requires_grad and name in self.drs_projection:
+                    P = self.drs_projection[name]
                     projected = P @ (P.T @ g.view(-1))
                     p.grad = projected.view_as(p)
+                else:
+                    p.grad = g
         else:
             loss.backward()
 

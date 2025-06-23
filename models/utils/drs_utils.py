@@ -10,35 +10,25 @@ def compute_drs_projection(model, dataloader, device, topk=64):
     with torch.no_grad():
         for inputs, labels, _ in tqdm(dataloader, desc="Collecting features for DRS"):
             inputs = inputs.to(device)
-            model.zero_grad()
-            output, activations = model(inputs, return_activations=True)
+            _, activations = model(inputs, return_activations=True)
+            if 'feat' not in activations:
+                continue
+            feat = activations['feat']
+            feat = F.normalize(feat, dim=-1).detach().cpu()
             for name, param in model.named_parameters():
                 if param.requires_grad:
                     if name not in features_by_param:
                         features_by_param[name] = []
-                    if "feat" in activations:
-                        feat = activations['feat']
-                    else:
-                        feat = output
-                    feat = F.normalize(feat, dim=-1).detach().cpu()
                     features_by_param[name].append(feat)
-    projections = []
 
-    for name, param in model.named_parameters():
-        if not param.requires_grad:
-            projections.append(None)
-            continue
-
-        feats = features_by_param.get(name, None)
-        if feats is None or len(feats) == 0:
-            projections.append(None)
-            continue
-
-        X = torch.cat(feats, dim=0)
+    projections = {}
+    for name, feats in features_by_param.items():
+        X = torch.cat(feats, dim=0)  # [N, D]
         X = X - X.mean(dim=0, keepdim=True)
         X_np = X.numpy()
-        U, S, Vh = np.linalg.svd(X_np.T @ X_np)
-        P = torch.from_numpy(U[:, :topk]).float().to(device)
-        projections.append(P)
+        cov = X_np.T @ X_np  # D x D
+        U, S, Vh = np.linalg.svd(cov)
+        P = torch.from_numpy(U[:, :topk]).float().to(device)  # D x topk
+        projections[name] = P
 
     return projections
