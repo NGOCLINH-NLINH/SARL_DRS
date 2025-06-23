@@ -53,12 +53,12 @@ def get_parser() -> ArgumentParser:
 # =============================================================================
 # Mean-ER
 # =============================================================================
-class SARL_LoRA(ContinualModel):
+class SARLLoRA(ContinualModel):
     NAME = 'sarl_lora'
     COMPATIBILITY = ['class-il', 'domain-il', 'task-il', 'general-continual']
 
     def __init__(self, backbone, loss, args, transform):
-        super(SARL_LoRA, self).__init__(backbone, loss, args, transform)
+        super(SARLLoRA, self).__init__(backbone, loss, args, transform)
         self.buffer = Buffer(self.args.buffer_size, self.device)
 
         # Initialize plastic and stable model
