@@ -33,12 +33,25 @@ def compute_drs_projection(model, dataloader, device, topk=64):
         G = G - G.mean(dim=0, keepdim=True)
         cov = G.T @ G
 
+        # try:
+        #     U, S, Vh = np.linalg.svd(cov.numpy(), full_matrices=False)
+        #     P = torch.from_numpy(U[:, :topk]).float().to(device)
+        #     projections[name] = P
+        # except np.linalg.LinAlgError as e:
+        #     print(f"SVD failed for parameter {name}: {e}")
+        #     continue
+
         try:
-            U, S, Vh = np.linalg.svd(cov.numpy(), full_matrices=False)
-            P = torch.from_numpy(U[:, :topk]).float().to(device)
-            projections[name] = P
-        except np.linalg.LinAlgError as e:
-            print(f"SVD failed for parameter {name}: {e}")
+            U_small, S_small, Vh_small = torch.linalg.svd(G @ G.T, full_matrices=False)
+
+            S_inv = torch.diag(1.0 / torch.sqrt(S_small + 1e-8))
+            P = G.T @ U_small @ S_inv
+
+            k = min(topk, P.shape[1])
+            projections[name] = P[:, :k]
+
+        except torch.linalg.LinAlgError as e:
+            print(f"SVD failed for parameter {name}: {e}. Skipping projection for this parameter.")
             continue
 
     return projections
