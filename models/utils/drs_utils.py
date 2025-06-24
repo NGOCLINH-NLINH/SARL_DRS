@@ -2,6 +2,7 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 from tqdm import tqdm
+from copy import deepcopy
 
 def compute_drs_projection(model, dataloader, device, topk=64):
     model.eval()
@@ -54,4 +55,67 @@ def compute_drs_projection(model, dataloader, device, topk=64):
             print(f"SVD failed for parameter {name}: {e}. Skipping projection for this parameter.")
             continue
 
+    return projections
+
+def compute_drs_projection_from_features(net_old, dataloader, device, topk=64):
+    print("--- DRS Computation for 'linear' Layer ONLY ---")
+
+    model_for_feature_extraction = deepcopy(net_old).to(device).eval()
+
+    TARGET_MODULE_NAME = 'linear'
+    print(f"Collecting input features from the target module: '{TARGET_MODULE_NAME}'")
+
+    feature_accumulator = []
+    hooks = []
+
+    def get_features_hook(model, input):
+        feature_accumulator.append(input[0].detach().cpu())
+
+    target_module_found = False
+    for name, module in model_for_feature_extraction.named_modules():
+        if name == TARGET_MODULE_NAME:
+            hooks.append(module.register_forward_pre_hook(get_features_hook))
+            target_module_found = True
+            break
+
+    if not target_module_found:
+        print(f"Error: Module '{TARGET_MODULE_NAME}' not found in the model. Aborting DRS.")
+        return {}
+
+    MAX_BATCHES_FOR_FEATURES = 50
+
+    with torch.no_grad():
+        for i, (inputs, _, _) in enumerate(tqdm(dataloader, desc=f"Feature Collection for '{TARGET_MODULE_NAME}'")):
+            if i >= MAX_BATCHES_FOR_FEATURES:
+                break
+            model_for_feature_extraction(inputs.to(device))
+
+    for hook in hooks:
+        hook.remove()
+
+    projections = {}
+    print(f"Computing SVD for '{TARGET_MODULE_NAME}'...")
+
+    if feature_accumulator:
+        try:
+            all_feats = torch.cat(feature_accumulator, dim=0)  # Shape: [N_total, D_in]
+            n_samples = all_feats.shape[0]
+
+            flat_feats_gpu = all_feats.to(device)
+
+            cov = flat_feats_gpu.T @ flat_feats_gpu / n_samples
+
+            U, S, Vh = torch.linalg.svd(cov, full_matrices=False)
+
+            k = min(topk, U.shape[1])
+
+            projections[TARGET_MODULE_NAME] = U[:, :k]
+
+        except Exception as e:
+            print(f"Could not compute SVD for layer {TARGET_MODULE_NAME} due to error: {e}")
+
+    del model_for_feature_extraction
+    torch.cuda.empty_cache()
+
+    print("--- DRS Computation Finished ---")
     return projections

@@ -9,6 +9,7 @@ from copy import deepcopy
 from utils.buffer import Buffer
 from utils.args import *
 from models.utils.drs_utils import compute_drs_projection
+from models.utils.drs_utils import compute_drs_projection_from_features
 from models.utils.continual_model import ContinualModel
 from backbone.MNISTMLP import SparseMNISTMLP
 from backbone.SparseResNet18 import sparse_resnet18
@@ -99,9 +100,20 @@ class SARLLoRA(ContinualModel):
 
         self.drs_projection = None
 
+    # def begin_task(self, dataset):
+    #     if self.current_task > 0:
+    #         self.drs_projection = compute_drs_projection(self.net_old, dataset.train_loader, device=self.device)
+    #     else:
+    #         self.drs_projection = None
+
     def begin_task(self, dataset):
         if self.current_task > 0:
-            self.drs_projection = compute_drs_projection(self.net_old, dataset.train_loader, device=self.device)
+            print(f"\nTask {self.current_task}: Computing DRS projection from NEW task data using OLD model.")
+            self.drs_projection = compute_drs_projection_from_features(
+                self.net_old,
+                dataset.train_loader,
+                device=self.device
+            )
         else:
             self.drs_projection = None
 
@@ -180,13 +192,27 @@ class SARLLoRA(ContinualModel):
 
         loss.backward()
 
+        # if self.drs_projection is not None:
+        #     for name, p in self.net.named_parameters():
+        #         if p.grad is not None and name in self.drs_projection:
+        #             P = self.drs_projection[name]
+        #             grad_flat = p.grad.view(-1)
+        #             grad_projected_flat = P @ (P.T @ grad_flat)
+        #             p.grad.data = grad_projected_flat.view_as(p.data)
+
         if self.drs_projection is not None:
-            for name, p in self.net.named_parameters():
-                if p.grad is not None and name in self.drs_projection:
-                    P = self.drs_projection[name]
-                    grad_flat = p.grad.view(-1)
-                    grad_projected_flat = P @ (P.T @ grad_flat)
-                    p.grad.data = grad_projected_flat.view_as(p.data)
+            with torch.no_grad():
+                for name, p in self.net.named_parameters():
+                    module_name = '.'.join(name.split('.')[:-1])
+
+                    if p.grad is not None and module_name in self.drs_projection:
+
+                        P = self.drs_projection[module_name]
+                        grad_flat = p.grad.view(-1)
+
+                        if name.endswith('.weight'):
+                            grad_proj = p.grad.data @ P @ P.T
+                            p.grad.data = grad_proj
 
         # Log values
         if hasattr(self, 'writer'):
