@@ -101,7 +101,7 @@ class SARLLoRA(ContinualModel):
 
     def begin_task(self, dataset):
         if self.current_task > 0:
-            self.drs_projection = compute_drs_projection(self.net, dataset.train_loader, device=self.device)
+            self.drs_projection = compute_drs_projection(self.net_old, dataset.train_loader, device=self.device)
         else:
             self.drs_projection = None
 
@@ -178,26 +178,15 @@ class SARLLoRA(ContinualModel):
         if torch.isnan(loss):
             raise ValueError('NAN Loss')
 
-        # if self.drs_projection is not None:
-        #     grads = torch.autograd.grad(loss, self.net.parameters(), create_graph=True, retain_graph=True)
-        #     for (name, p), g, P in zip(self.net.named_parameters(), grads, self.drs_projection):
-        #         if g is not None and p.requires_grad:
-        #             projected = P @ (P.T @ g.view(-1))
-        #             p.grad = projected.view_as(p)
-        # else:
-        #     loss.backward()
+        loss.backward()
 
         if self.drs_projection is not None:
-            grads = torch.autograd.grad(loss, self.net.parameters(), create_graph=True, retain_graph=True)
-            for (name, p), g in zip(self.net.named_parameters(), grads):
-                if g is not None and p.requires_grad and name in self.drs_projection:
+            for name, p in self.net.named_parameters():
+                if p.grad is not None and name in self.drs_projection:
                     P = self.drs_projection[name]
-                    projected = P @ (P.T @ g.view(-1))
-                    p.grad = projected.view_as(p)
-                else:
-                    p.grad = g
-        else:
-            loss.backward()
+                    grad_flat = p.grad.view(-1)
+                    grad_projected_flat = P @ (P.T @ grad_flat)
+                    p.grad.data = grad_projected_flat.view_as(p.data)
 
         # Log values
         if hasattr(self, 'writer'):
@@ -295,12 +284,14 @@ class SARLLoRA(ContinualModel):
 
         self.eval_prototypes = True
         self.flag = True
-        self.current_task += 1
+        # self.current_task += 1
         self.net.eval()
 
         # Save old model
         self.net_old = deepcopy(self.net)
         self.net_old.eval()
+
+        self.current_task += 1
 
         # =====================================
         # Buffer Pass
@@ -351,7 +342,7 @@ class SARLLoRA(ContinualModel):
         if self.args.save_interim:
             model_dir = os.path.join(self.args.output_dir, "task_models", dataset.NAME, self.args.experiment_id)
             os.makedirs(model_dir, exist_ok=True)
-            torch.save(self.net, os.path.join(model_dir, f'task{self.current_task}'))
+            torch.save(self.net, os.path.join(model_dir, f'task{self.current_task-1}'))
             torch.save(self.op, os.path.join(model_dir, f'object_ptototypes.ph'))
 
     def get_optimizer(self):

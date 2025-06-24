@@ -5,30 +5,40 @@ from tqdm import tqdm
 
 def compute_drs_projection(model, dataloader, device, topk=64):
     model.eval()
-    features_by_param = {}
+    grads_by_param = {name: [] for name, p in model.named_parameters() if p.requires_grad}
+    print("Collecting gradients for DRS projection...")
 
-    with torch.no_grad():
-        for inputs, labels, _ in tqdm(dataloader, desc="Collecting features for DRS"):
-            inputs = inputs.to(device)
-            _, activations = model(inputs, return_activations=True)
-            if 'feat' not in activations:
-                continue
-            feat = activations['feat']
-            feat = F.normalize(feat, dim=-1).detach().cpu()
-            for name, param in model.named_parameters():
-                if param.requires_grad:
-                    if name not in features_by_param:
-                        features_by_param[name] = []
-                    features_by_param[name].append(feat)
+    for inputs, labels, _ in tqdm(dataloader, desc="Collecting Gradients"):
+        inputs, labels = inputs.to(device), labels.to(device)
 
+        model.zero_grad()
+        outputs, _ = model(inputs, return_activations=True)
+        loss = F.cross_entropy(outputs, labels)
+
+        loss.backward()
+
+        for name, p in model.named_parameters():
+            if p.requires_grad and p.grad is not None:
+                grads_by_param[name].append(p.grad.view(-1).detach().cpu())
+
+    model.zero_grad()
     projections = {}
-    for name, feats in features_by_param.items():
-        X = torch.cat(feats, dim=0)  # [N, D]
-        X = X - X.mean(dim=0, keepdim=True)
-        X_np = X.numpy()
-        cov = X_np.T @ X_np  # D x D
-        U, S, Vh = np.linalg.svd(cov)
-        P = torch.from_numpy(U[:, :topk]).float().to(device)  # D x topk
-        projections[name] = P
+    print("\nComputing SVD for projection matrices...")
+
+    for name, grads_list in tqdm(grads_by_param.items(), desc="Computing SVD"):
+        if not grads_list:
+            continue
+
+        G = torch.stack(grads_list, dim=0)
+        G = G - G.mean(dim=0, keepdim=True)
+        cov = G.T @ G
+
+        try:
+            U, S, Vh = np.linalg.svd(cov.numpy(), full_matrices=False)
+            P = torch.from_numpy(U[:, :topk]).float().to(device)
+            projections[name] = P
+        except np.linalg.LinAlgError as e:
+            print(f"SVD failed for parameter {name}: {e}")
+            continue
 
     return projections
