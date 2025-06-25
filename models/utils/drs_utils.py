@@ -57,10 +57,26 @@ def compute_drs_projection(model, dataloader, device, topk=64):
 
     return projections
 
-def compute_drs_projection_from_features(net_old, dataloader, device, topk=64):
+
+def create_subtracted_model(net_initial, net_old):
+    net_tilde = deepcopy(net_initial)
+
+    params_tilde = net_tilde.parameters()
+    params_initial = net_initial.parameters()
+    params_old = net_old.parameters()
+
+    for p_tilde, p_initial, p_old in zip(params_tilde, params_initial, params_old):
+        p_tilde.data = 2 * p_initial.data - p_old.data
+
+    return net_tilde
+
+def compute_drs_projection_from_features(net_initial, net_old, dataloader, device, topk=64):
     print("--- DRS Computation for 'linear' Layer ONLY ---")
 
-    model_for_feature_extraction = deepcopy(net_old).to(device).eval()
+    # model_for_feature_extraction = deepcopy(net_old).to(device).eval()
+
+    print("Creating subtracted model (W_tilde = 2*W_0 - W_{t-1})...")
+    model_for_feature_extraction = create_subtracted_model(net_initial, net_old).to(device).eval()
 
     TARGET_MODULE_NAME = 'linear'
     print(f"Collecting input features from the target module: '{TARGET_MODULE_NAME}'")

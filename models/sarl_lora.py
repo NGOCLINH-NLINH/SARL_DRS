@@ -73,6 +73,9 @@ class SARLLoRA(ContinualModel):
                 relu=args.kw_relu, apply_kw=args.apply_kw
             ).to(self.device)
 
+        print("Saving the initial model state (W_0)...")
+        self.net_initial = deepcopy(self.net)
+
         self.net_old = None
         self.get_optimizer()
 
@@ -118,24 +121,37 @@ class SARLLoRA(ContinualModel):
     #     else:
     #         self.drs_projection = None
 
+    # def begin_task(self, dataset):
+    #     if self.current_task > 0:
+    #         print(f"\nTask {self.current_task}: Computing DRS projection from OLD task gradients (using buffer).")
+    #
+    #         buf_inputs, buf_labels, _ = self.buffer.get_all_data()
+    #         if len(buf_inputs) > 0:
+    #             buf_indices = torch.arange(len(buf_inputs))
+    #             buf_dataset = torch.utils.data.TensorDataset(buf_inputs, buf_labels, buf_indices)
+    #             dataloader_old = torch.utils.data.DataLoader(buf_dataset, batch_size=self.args.batch_size, shuffle=True)
+    #
+    #             self.drs_projection = compute_drs_projection_from_gradient(
+    #                 self.net_old,
+    #                 dataloader_old,
+    #                 device=self.device
+    #             )
+    #         else:
+    #             print("Buffer is empty, cannot compute DRS from gradients. Skipping.")
+    #             self.drs_projection = None
+    #     else:
+    #         self.drs_projection = None
+
     def begin_task(self, dataset):
         if self.current_task > 0:
-            print(f"\nTask {self.current_task}: Computing DRS projection from OLD task gradients (using buffer).")
+            print(f"\nTask {self.current_task}: Computing DRS projection using W-tilde...")
 
-            buf_inputs, buf_labels, _ = self.buffer.get_all_data()
-            if len(buf_inputs) > 0:
-                buf_indices = torch.arange(len(buf_inputs))
-                buf_dataset = torch.utils.data.TensorDataset(buf_inputs, buf_labels, buf_indices)
-                dataloader_old = torch.utils.data.DataLoader(buf_dataset, batch_size=self.args.batch_size, shuffle=True)
-
-                self.drs_projection = compute_drs_projection_from_gradient(
-                    self.net_old,
-                    dataloader_old,
-                    device=self.device
-                )
-            else:
-                print("Buffer is empty, cannot compute DRS from gradients. Skipping.")
-                self.drs_projection = None
+            self.drs_projection = compute_drs_projection_from_features(
+                self.net_initial,
+                self.net_old,
+                dataset.train_loader,
+                device=self.device
+            )
         else:
             self.drs_projection = None
 
@@ -222,45 +238,45 @@ class SARLLoRA(ContinualModel):
         #             grad_projected_flat = P @ (P.T @ grad_flat)
         #             p.grad.data = grad_projected_flat.view_as(p.data)
 
-        # if self.drs_projection is not None:
-        #     with torch.no_grad():
-        #         for name, p in self.net.named_parameters():
-        #             module_name = '.'.join(name.split('.')[:-1])
-        #
-        #             if p.grad is not None and module_name in self.drs_projection:
-        #
-        #                 P = self.drs_projection[module_name]
-        #                 grad_flat = p.grad.view(-1)
-        #
-        #                 if name.endswith('.weight'):
-        #                     original_grad = p.grad.clone()
-        #
-        #                     grad_proj = p.grad.data @ P @ P.T
-        #                     p.grad.data = grad_proj
-        #
-        #                     original_norm = torch.linalg.norm(original_grad).item()
-        #                     projected_norm = torch.linalg.norm(p.grad.data).item()
-        #
-        #                     are_different = not torch.allclose(original_grad, p.grad.data)
-        #
-        #                     if hasattr(self, 'iteration') and self.iteration < 3:
-        #                         print("\n--- Gradient Projection Check (Iteration {}) ---".format(self.iteration))
-        #                         print(f"Module: {name}")
-        #                         print(f"  Norm of ORIGINAL Gradient:     {original_norm:.6f}")
-        #                         print(f"  Norm of PROJECTED Gradient: {projected_norm:.6f}")
-        #                         print(f"  Are 2 Gradients different? -> {are_different}")
-        #                         print("--------------------------------------------")
-
         if self.drs_projection is not None:
             with torch.no_grad():
                 for name, p in self.net.named_parameters():
-                    if p.grad is not None and name in self.drs_projection:
-                        P = self.drs_projection[name]
-                        original_shape = p.grad.shape
+                    module_name = '.'.join(name.split('.')[:-1])
+
+                    if p.grad is not None and module_name in self.drs_projection:
+
+                        P = self.drs_projection[module_name]
                         grad_flat = p.grad.view(-1)
 
-                        grad_projected_flat = P @ (P.T @ grad_flat)
-                        p.grad.data = grad_projected_flat.view(original_shape)
+                        if name.endswith('.weight'):
+                            original_grad = p.grad.clone()
+
+                            grad_proj = p.grad.data @ P @ P.T
+                            p.grad.data = grad_proj
+
+                            original_norm = torch.linalg.norm(original_grad).item()
+                            projected_norm = torch.linalg.norm(p.grad.data).item()
+
+                            are_different = not torch.allclose(original_grad, p.grad.data)
+
+                            if hasattr(self, 'iteration') and self.iteration < 3:
+                                print("\n--- Gradient Projection Check (Iteration {}) ---".format(self.iteration))
+                                print(f"Module: {name}")
+                                print(f"  Norm of ORIGINAL Gradient:     {original_norm:.6f}")
+                                print(f"  Norm of PROJECTED Gradient: {projected_norm:.6f}")
+                                print(f"  Are 2 Gradients different? -> {are_different}")
+                                print("--------------------------------------------")
+
+        # if self.drs_projection is not None:
+        #     with torch.no_grad():
+        #         for name, p in self.net.named_parameters():
+        #             if p.grad is not None and name in self.drs_projection:
+        #                 P = self.drs_projection[name]
+        #                 original_shape = p.grad.shape
+        #                 grad_flat = p.grad.view(-1)
+        #
+        #                 grad_projected_flat = P @ (P.T @ grad_flat)
+        #                 p.grad.data = grad_projected_flat.view(original_shape)
 
         # Log values
         if hasattr(self, 'writer'):
