@@ -255,7 +255,6 @@ class SARLLoRA(ContinualModel):
             with torch.no_grad():
                 for name, p in self.net.named_parameters():
                     if p.grad is not None and name in self.drs_projection:
-                        print(f"Projecting gradient for: {name}")
                         P = self.drs_projection[name]
                         original_shape = p.grad.shape
                         grad_flat = p.grad.view(-1)
