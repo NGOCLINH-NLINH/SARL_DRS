@@ -211,8 +211,23 @@ class SARLLoRA(ContinualModel):
                         grad_flat = p.grad.view(-1)
 
                         if name.endswith('.weight'):
+                            original_grad = p.grad.clone()
+
                             grad_proj = p.grad.data @ P @ P.T
                             p.grad.data = grad_proj
+
+                            original_norm = torch.linalg.norm(original_grad).item()
+                            projected_norm = torch.linalg.norm(p.grad.data).item()
+
+                            are_different = not torch.allclose(original_grad, p.grad.data)
+
+                            if hasattr(self, 'iteration') and self.iteration < 3:
+                                print("\n--- Gradient Projection Check (Iteration {}) ---".format(self.iteration))
+                                print(f"Module: {name}")
+                                print(f"  Norm of ORIGINAL Gradient:     {original_norm:.6f}")
+                                print(f"  Norm of PROJECTED Gradient: {projected_norm:.6f}")
+                                print(f"  Are 2 Gradients different? -> {are_different}")
+                                print("--------------------------------------------")
 
         # Log values
         if hasattr(self, 'writer'):

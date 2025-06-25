@@ -82,7 +82,7 @@ def compute_drs_projection_from_features(net_old, dataloader, device, topk=64):
         print(f"Error: Module '{TARGET_MODULE_NAME}' not found in the model. Aborting DRS.")
         return {}
 
-    MAX_BATCHES_FOR_FEATURES = 50
+    MAX_BATCHES_FOR_FEATURES = 100
 
     with torch.no_grad():
         for i, (inputs, _, _) in enumerate(tqdm(dataloader, desc=f"Feature Collection for '{TARGET_MODULE_NAME}'")):
