@@ -5,7 +5,7 @@ from tqdm import tqdm
 from copy import deepcopy
 
 
-def compute_feature_subspaces(net_old, dataloader_new, target_layers, device, topk=64):
+def compute_feature_subspaces(net_old, dataloader_new, target_layers, device, topk=32):
     print("\n--- Computing Feature Subspaces for Regularization ---")
 
     model_for_feature_extraction = deepcopy(net_old).to(device).eval()
@@ -26,7 +26,7 @@ def compute_feature_subspaces(net_old, dataloader_new, target_layers, device, to
         if name in target_layers:
             hooks.append(module.register_forward_hook(get_output_features_hook(name)))
 
-    MAX_BATCHES_FOR_FEATURES = 312
+    MAX_BATCHES_FOR_FEATURES = 200
 
     with torch.no_grad():
         for i, (inputs, _, _) in enumerate(tqdm(dataloader_new, desc="Collecting Output Features")):
@@ -44,13 +44,20 @@ def compute_feature_subspaces(net_old, dataloader_new, target_layers, device, to
         if not feat_list:
             continue
         try:
-            all_feats = torch.cat(feat_list, dim=0).to(device)
-            U, S, Vh = torch.linalg.svd(all_feats, full_matrices=False)
+            # all_feats = torch.cat(feat_list, dim=0).to(device)
+            # U, S, Vh = torch.linalg.svd(all_feats, full_matrices=False)
+            #
+            # k = min(topk, Vh.shape[0])
+            #
+            # basis_vectors = Vh[:k, :]
+            # subspaces[name] = basis_vectors
+            X = torch.cat(feat_list, dim=0).to(device)
+            U_small, S_small, Vh_small = torch.linalg.svd(X @ X.T, full_matrices=False)
+            S_inv_sqrt = torch.diag(1.0 / torch.sqrt(S_small + 1e-8))
+            basis_vectors = S_inv_sqrt @ U_small.T @ X
 
-            k = min(topk, Vh.shape[0])
-
-            basis_vectors = Vh[:k, :]
-            subspaces[name] = basis_vectors
+            k = min(topk, basis_vectors.shape[0])
+            subspaces[name] = basis_vectors[:k, :]
 
         except Exception as e:
             print(f"Could not compute SVD for layer {name} due to error: {e}. Skipping.")
