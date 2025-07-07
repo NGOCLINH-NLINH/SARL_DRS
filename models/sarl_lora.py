@@ -269,13 +269,15 @@ class SARLLoRA(ContinualModel):
                 if name in self.feature_maps_new:
                     current_features = self.feature_maps_new[name]
                     flat_features = current_features.view(current_features.shape[0], -1)
+                    norm_current_features_sq = torch.norm(flat_features, p=2) ** 2 + 1e-8
 
                     P_basis = basis_vectors.T
-                    projected_features = flat_features @ P_basis @ P_basis.T
+                    projection_matrix = P_basis @ P_basis.T
+                    projected_features = flat_features @ projection_matrix
 
                     orthogonal_component = flat_features - projected_features
-
-                    feat_reg_loss += torch.norm(orthogonal_component, p=2)
+                    normalized_loss = torch.norm(orthogonal_component, p=2) ** 2 / norm_current_features_sq
+                    feat_reg_loss += normalized_loss
 
             if len(self.feature_subspaces) > 0:
                 loss += self.lambda_feat_reg * (feat_reg_loss / len(self.feature_subspaces))
