@@ -67,7 +67,7 @@ class SARLLoRA(ContinualModel):
         self.target_layers_for_reg = [
             'layer1', 'layer2', 'layer3', 'layer4', 'linear'
         ]
-        self.feature_maps = {}
+        self.feature_maps_new = {}
         self.hooks = []
 
         self.buffer = Buffer(self.args.buffer_size, self.device)
@@ -158,7 +158,7 @@ class SARLLoRA(ContinualModel):
 
         def get_output_hook(name):
             def hook(module, input, output):
-                self.feature_maps[name] = output
+                self.feature_maps_new[name] = output
             return hook
 
         for name, module in self.net.named_modules():
