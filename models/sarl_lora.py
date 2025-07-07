@@ -272,8 +272,8 @@ class SARLLoRA(ContinualModel):
                     norm_current_features_sq = torch.norm(flat_features, p=2) ** 2 + 1e-8
 
                     P_basis = basis_vectors.T
-                    projection_matrix = P_basis @ P_basis.T
-                    projected_features = flat_features @ projection_matrix
+                    temp = flat_features @ P_basis
+                    projected_features = temp @ P_basis.T
 
                     orthogonal_component = flat_features - projected_features
                     normalized_loss = torch.norm(orthogonal_component, p=2) ** 2 / norm_current_features_sq
