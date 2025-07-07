@@ -4,6 +4,64 @@ import numpy as np
 from tqdm import tqdm
 from copy import deepcopy
 
+
+def compute_feature_subspaces(net_old, dataloader_new, target_layers, device, topk=64):
+    print("\n--- Computing Feature Subspaces for Regularization ---")
+
+    model_for_feature_extraction = deepcopy(net_old).to(device).eval()
+
+    print(f"Targeting {len(target_layers)} layers for feature space construction: {target_layers}")
+
+    feature_accumulator = {name: [] for name in target_layers}
+    hooks = []
+
+    def get_output_features_hook(name):
+        def hook(module, input, output):
+            flat_output = output.detach().view(output.shape[0], -1).cpu()
+            feature_accumulator[name].append(flat_output)
+
+        return hook
+
+    for name, module in model_for_feature_extraction.named_modules():
+        if name in target_layers:
+            hooks.append(module.register_forward_hook(get_output_features_hook(name)))
+
+    MAX_BATCHES_FOR_FEATURES = 312
+
+    with torch.no_grad():
+        for i, (inputs, _, _) in enumerate(tqdm(dataloader_new, desc="Collecting Output Features")):
+            if i >= MAX_BATCHES_FOR_FEATURES:
+                break
+            model_for_feature_extraction(inputs.to(device))
+
+    for hook in hooks:
+        hook.remove()
+
+    subspaces = {}
+    print("Computing SVD to define subspaces...")
+
+    for name, feat_list in tqdm(feature_accumulator.items(), desc="Computing SVD"):
+        if not feat_list:
+            continue
+        try:
+            all_feats = torch.cat(feat_list, dim=0).to(device)
+            U, S, Vh = torch.linalg.svd(all_feats, full_matrices=False)
+
+            k = min(topk, Vh.shape[0])
+
+            basis_vectors = Vh[:k, :]
+            subspaces[name] = basis_vectors
+
+        except Exception as e:
+            print(f"Could not compute SVD for layer {name} due to error: {e}. Skipping.")
+            continue
+
+    del model_for_feature_extraction
+    torch.cuda.empty_cache()
+
+    print("--- Feature Subspace Computation Finished ---")
+    return subspaces
+
 def compute_drs_projection(model, dataloader, device, topk=64):
     model.eval()
     grads_by_param = {name: [] for name, p in model.named_parameters() if p.requires_grad}

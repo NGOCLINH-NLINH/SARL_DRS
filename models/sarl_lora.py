@@ -11,6 +11,7 @@ from utils.args import *
 from models.utils.drs_utils import compute_drs_projection
 from models.utils.drs_utils import compute_drs_projection_from_features
 from models.utils.drs_utils_from_gradient import compute_drs_projection_from_gradient
+from models.utils.drs_utils import compute_feature_subspaces
 from models.utils.continual_model import ContinualModel
 from backbone.MNISTMLP import SparseMNISTMLP
 from backbone.SparseResNet18 import sparse_resnet18
@@ -61,6 +62,14 @@ class SARLLoRA(ContinualModel):
 
     def __init__(self, backbone, loss, args, transform):
         super(SARLLoRA, self).__init__(backbone, loss, args, transform)
+        self.lambda_feat_reg = 0.5
+        self.feature_subspaces = None
+        self.target_layers_for_reg = [
+            'layer1', 'layer2', 'layer3', 'layer4', 'linear'
+        ]
+        self.feature_maps = {}
+        self.hooks = []
+
         self.buffer = Buffer(self.args.buffer_size, self.device)
 
         # Initialize plastic and stable model
@@ -142,18 +151,34 @@ class SARLLoRA(ContinualModel):
     #     else:
     #         self.drs_projection = None
 
+    def _setup_hooks(self):
+        for hook in self.hooks:
+            hook.remove()
+        self.hooks.clear()
+
+        def get_output_hook(name):
+            def hook(module, input, output):
+                self.feature_maps[name] = output
+            return hook
+
+        for name, module in self.net.named_modules():
+            if name in self.target_layers_for_reg:
+                self.hooks.append(module.register_forward_hook(get_output_hook(name)))
+
     def begin_task(self, dataset):
         if self.current_task > 0:
-            print(f"\nTask {self.current_task}: Computing DRS projection using W-tilde...")
+            print(f"\nTask {self.current_task}: Computing feature_subspaces...")
 
-            self.drs_projection = compute_drs_projection_from_features(
-                self.net_initial,
+            self.feature_subspaces = compute_feature_subspaces(
                 self.net_old,
                 dataset.train_loader,
-                device=self.device
+                self.target_layers_for_reg,
+                self.device
             )
         else:
-            self.drs_projection = None
+            self.feature_subspaces = None
+
+        self._setup_hooks()
 
     def observe(self, inputs, labels, not_aug_inputs):
         real_batch_size = inputs.shape[0]
@@ -238,34 +263,22 @@ class SARLLoRA(ContinualModel):
         #             grad_projected_flat = P @ (P.T @ grad_flat)
         #             p.grad.data = grad_projected_flat.view_as(p.data)
 
-        if self.drs_projection is not None:
-            with torch.no_grad():
-                for name, p in self.net.named_parameters():
-                    module_name = '.'.join(name.split('.')[:-1])
+        if self.feature_subspaces is not None:
+            feat_reg_loss = 0
+            for name, basis_vectors in self.feature_subspaces.items():
+                if name in self.feature_maps_new:
+                    current_features = self.feature_maps_new[name]
+                    flat_features = current_features.view(current_features.shape[0], -1)
 
-                    if p.grad is not None and module_name in self.drs_projection:
+                    P_basis = basis_vectors.T
+                    projected_features = flat_features @ P_basis @ P_basis.T
 
-                        P = self.drs_projection[module_name]
-                        grad_flat = p.grad.view(-1)
+                    orthogonal_component = flat_features - projected_features
 
-                        if name.endswith('.weight'):
-                            original_grad = p.grad.clone()
+                    feat_reg_loss += torch.norm(orthogonal_component, p=2)
 
-                            grad_proj = p.grad.data @ P @ P.T
-                            p.grad.data = grad_proj
-
-                            original_norm = torch.linalg.norm(original_grad).item()
-                            projected_norm = torch.linalg.norm(p.grad.data).item()
-
-                            are_different = not torch.allclose(original_grad, p.grad.data)
-
-                            if hasattr(self, 'iteration') and self.iteration < 3:
-                                print("\n--- Gradient Projection Check (Iteration {}) ---".format(self.iteration))
-                                print(f"Module: {name}")
-                                print(f"  Norm of ORIGINAL Gradient:     {original_norm:.6f}")
-                                print(f"  Norm of PROJECTED Gradient: {projected_norm:.6f}")
-                                print(f"  Are 2 Gradients different? -> {are_different}")
-                                print("--------------------------------------------")
+            if len(self.feature_subspaces) > 0:
+                loss += self.lambda_feat_reg * (feat_reg_loss / len(self.feature_subspaces))
 
         # if self.drs_projection is not None:
         #     with torch.no_grad():
