@@ -5,7 +5,7 @@ from tqdm import tqdm
 from copy import deepcopy
 
 
-def compute_feature_subspaces(net_old, dataloader_new, target_layers, device, topk=32):
+def compute_feature_subspaces(net_old, dataloader_new, target_layers, device, topk=64):
     print("\n--- Computing Feature Subspaces for Regularization ---")
 
     model_for_feature_extraction = deepcopy(net_old).to(device).eval()
@@ -26,7 +26,7 @@ def compute_feature_subspaces(net_old, dataloader_new, target_layers, device, to
         if name in target_layers:
             hooks.append(module.register_forward_hook(get_output_features_hook(name)))
 
-    MAX_BATCHES_FOR_FEATURES = 200
+    MAX_BATCHES_FOR_FEATURES = 312
 
     with torch.no_grad():
         for i, (inputs, _, _) in enumerate(tqdm(dataloader_new, desc="Collecting Output Features")):
