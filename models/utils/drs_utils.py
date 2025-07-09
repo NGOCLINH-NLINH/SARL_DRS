@@ -5,7 +5,7 @@ from tqdm import tqdm
 from copy import deepcopy
 
 
-def compute_feature_subspaces(net_old, dataloader_new, target_layers, device, variance_threshold=0.80):
+def compute_feature_subspaces(net_old, dataloader_new, target_layers, device, variance_threshold=0.95):
     print("\n--- Computing Feature Subspaces for Regularization (Explained Variance Threshold: {variance_threshold*100}%)---")
 
     model_for_feature_extraction = deepcopy(net_old).to(device).eval()
