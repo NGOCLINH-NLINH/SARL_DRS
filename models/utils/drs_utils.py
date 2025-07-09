@@ -5,8 +5,8 @@ from tqdm import tqdm
 from copy import deepcopy
 
 
-def compute_feature_subspaces(net_old, dataloader_new, target_layers, device, topk=32):
-    print("\n--- Computing Feature Subspaces for Regularization ---")
+def compute_feature_subspaces(net_old, dataloader_new, target_layers, device, variance_threshold=0.95):
+    print("\n--- Computing Feature Subspaces for Regularization (Explained Variance Threshold: {variance_threshold*100}%)---")
 
     model_for_feature_extraction = deepcopy(net_old).to(device).eval()
 
@@ -53,10 +53,22 @@ def compute_feature_subspaces(net_old, dataloader_new, target_layers, device, to
             # subspaces[name] = basis_vectors
             X = torch.cat(feat_list, dim=0).to(device)
             U_small, S_small, Vh_small = torch.linalg.svd(X @ X.T, full_matrices=False)
+            explained_variance = S_small / S_small.sum()
+
+            cumulative_variance = torch.cumsum(explained_variance, dim=0)
+            k_tensor = torch.where(cumulative_variance >= variance_threshold)[0]
+
+            if len(k_tensor) == 0:
+                k = len(S_small)
+            else:
+                k = k_tensor[0].item() + 1
+
+            print(
+                f"  - Layer '{name}': k = {k} components selected to capture {variance_threshold * 100}% of variance.")
+
             S_inv_sqrt = torch.diag(1.0 / torch.sqrt(S_small + 1e-8))
             basis_vectors = S_inv_sqrt @ U_small.T @ X
 
-            k = min(topk, basis_vectors.shape[0])
             subspaces[name] = basis_vectors[:k, :]
 
         except Exception as e:
