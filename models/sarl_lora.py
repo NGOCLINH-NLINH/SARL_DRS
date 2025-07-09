@@ -167,7 +167,7 @@ class SARLLoRA(ContinualModel):
 
     def begin_task(self, dataset):
         if self.current_task > 0:
-            print(f"\nTask {self.current_task}: Computing feature_subspaces...")
+            print(f"\nTask {self.current_task}: Computing feature_subspaces... (LAMBDA_FEAT_REG = {self.lambda_feat_reg})")
 
             self.feature_subspaces = compute_feature_subspaces(
                 self.net_old,
