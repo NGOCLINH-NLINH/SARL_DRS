@@ -110,7 +110,7 @@ class SparseResNet(nn.Module):
         self.block = block
         self.num_classes = num_classes
         self.nf = nf
-        self.conv1 = conv3x3(3, nf * 1)
+        self.conv1 = conv3x3(3, nf * 1)data
         self.bn1 = nn.BatchNorm2d(nf * 1)
         self.num_blocks = num_blocks
 
