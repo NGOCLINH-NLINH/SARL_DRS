@@ -208,7 +208,7 @@ class SARLLoRA(ContinualModel):
                 loss += self.args.op_weight * dist
 
             if hasattr(self, 'writer'):
-                self.writer.add_scalar(f'Task {self.current_task}/reg_loss', reg_loss.item(), self.iteration)
+                # self.writer.add_scalar(f'Task {self.current_task}/reg_loss', reg_loss.item(), self.iteration)
                 self.writer.add_scalar(f'Task {self.current_task}/buff_ce_loss', buff_ce_loss.item(), self.iteration)
 
         outputs, activations = self.net(inputs, return_activations=True)
