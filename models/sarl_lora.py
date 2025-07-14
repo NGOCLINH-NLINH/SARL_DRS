@@ -62,7 +62,7 @@ class SARLLoRA(ContinualModel):
 
     def __init__(self, backbone, loss, args, transform):
         super(SARLLoRA, self).__init__(backbone, loss, args, transform)
-        self.lambda_feat_reg = 5.0
+        self.lambda_feat_reg = 0.7
         self.feature_subspaces = None
         self.target_layers_for_reg = [
             'layer1', 'layer2', 'layer3', 'layer4', 'linear'
@@ -88,6 +88,10 @@ class SARLLoRA(ContinualModel):
         self.net_old = None
         self.get_optimizer()
 
+        # net_ema for safe subspaces construction
+        self.net_ema = deepcopy(self.net)
+        self.ema_alpha = 0.999
+
         # set regularization weight
         self.alpha = args.alpha
 
@@ -111,7 +115,13 @@ class SARLLoRA(ContinualModel):
         self.dist_mat = torch.zeros(num_classes_dict[args.dataset], num_classes_dict[args.dataset]).to(self.device)
         self.class_dict = class_dict[args.dataset]
 
-        self.drs_projection = None
+    def _update_ema_model(self):
+        print("---Updating EMA Model---")
+        with torch.no_grad():
+            for param_ema, param in zip(self.net_ema.parameters(), self.net.parameters()):
+                param_ema.data.mul_(self.ema_alpha).add_(param.data, alpha=1 - self.ema_alpha)
+        print("---Finish Updating EMA Model---")
+
 
     def _setup_hooks(self):
         for hook in self.hooks:
@@ -132,7 +142,7 @@ class SARLLoRA(ContinualModel):
             print(f"\nTask {self.current_task}: Computing feature_subspaces... (LAMBDA_FEAT_REG = {self.lambda_feat_reg})")
 
             self.feature_subspaces = compute_feature_subspaces(
-                self.net_old,
+                self.net_ema,
                 dataset.train_loader,
                 self.target_layers_for_reg,
                 self.device
@@ -242,6 +252,8 @@ class SARLLoRA(ContinualModel):
 
         loss.backward()
         self.opt.step()
+
+        self._update_ema_model()
 
         self.buffer.add_data(
             examples=not_aug_inputs,
