@@ -159,10 +159,10 @@ class SARLLoRA(ContinualModel):
             buf_inputs, buf_labels, buf_logits = self.buffer.get_data(self.args.minibatch_size, transform=self.transform)
             buff_out, buff_activations = self.net(buf_inputs, return_activations=True)
             buff_feats = buff_activations['feat']
-            # reg_loss = self.args.alpha * F.mse_loss(buff_out, buf_logits)
+            reg_loss = self.args.alpha * F.mse_loss(buff_out, buf_logits)
 
             buff_ce_loss = self.loss(buff_out, buf_labels)
-            # loss += reg_loss + buff_ce_loss
+            loss += reg_loss + buff_ce_loss
             loss += buff_ce_loss
 
             # Regularization loss on Class Prototypes
@@ -178,15 +178,15 @@ class SARLLoRA(ContinualModel):
                 loss += self.args.op_weight * dist
 
             if hasattr(self, 'writer'):
-                # self.writer.add_scalar(f'Task {self.current_task}/reg_loss', reg_loss.item(), self.iteration)
+                self.writer.add_scalar(f'Task {self.current_task}/reg_loss', reg_loss.item(), self.iteration)
                 self.writer.add_scalar(f'Task {self.current_task}/buff_ce_loss', buff_ce_loss.item(), self.iteration)
 
         outputs, activations = self.net(inputs, return_activations=True)
 
         if self.epoch > self.args.warmup_epochs and self.current_task > 0:
 
-            # outputs_old = self.net_old(inputs)
-            # loss += self.args.beta * F.mse_loss(outputs, outputs_old)
+            outputs_old = self.net_old(inputs)
+            loss += self.args.beta * F.mse_loss(outputs, outputs_old)
 
             new_labels = [i.item() for i in torch.unique(labels) if i not in self.learned_classes]
             all_labels = self.learned_classes + new_labels
