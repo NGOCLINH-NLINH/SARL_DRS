@@ -253,7 +253,7 @@ class SARLLoRA(ContinualModel):
         if torch.isnan(loss):
             raise ValueError('NAN Loss')
 
-        loss.backward()
+        # loss.backward()
 
         # if self.drs_projection is not None:
         #     for name, p in self.net.named_parameters():
@@ -298,7 +298,7 @@ class SARLLoRA(ContinualModel):
             self.writer.add_scalar(f'Task {self.current_task}/ce_loss', ce_loss.item(), self.iteration)
             self.writer.add_scalar(f'Task {self.current_task}/loss', loss.item(), self.iteration)
 
-        # loss.backward()
+        loss.backward()
         self.opt.step()
 
         self.buffer.add_data(
