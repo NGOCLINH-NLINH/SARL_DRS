@@ -163,7 +163,6 @@ class SARLLoRA(ContinualModel):
 
             buff_ce_loss = self.loss(buff_out, buf_labels)
             loss += reg_loss + buff_ce_loss
-            loss += buff_ce_loss
 
             # Regularization loss on Class Prototypes
             if self.current_task > 0:
