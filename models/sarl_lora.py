@@ -116,11 +116,9 @@ class SARLLoRA(ContinualModel):
         self.class_dict = class_dict[args.dataset]
 
     def _update_ema_model(self):
-        print("---Updating EMA Model---")
         with torch.no_grad():
             for param_ema, param in zip(self.net_ema.parameters(), self.net.parameters()):
                 param_ema.data.mul_(self.ema_alpha).add_(param.data, alpha=1 - self.ema_alpha)
-        print("---Finish Updating EMA Model---")
 
 
     def _setup_hooks(self):
