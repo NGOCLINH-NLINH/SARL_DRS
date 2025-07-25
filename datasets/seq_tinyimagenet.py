@@ -80,7 +80,7 @@ class TinyImagenet(Dataset):
 
         # doing this so that it is consistent with all other datasets
         # to return a PIL Image
-        img = Image.fromarray(np.uint8(255 * img))
+        img = Image.fromarray(img)
         original_img = img.copy()
 
         if self.transform is not None:
@@ -109,7 +109,7 @@ class MyTinyImagenet(TinyImagenet):
 
         # doing this so that it is consistent with all other datasets
         # to return a PIL Image
-        img = Image.fromarray(np.uint8(255 * img))
+        img = Image.fromarray(img)
         original_img = img.copy()
 
         not_aug_img = self.not_aug_transform(original_img)
