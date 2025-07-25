@@ -35,13 +35,15 @@ best_params = {
 }
 
 
-lst_seed = [1, 3, 5]
-lst_buffer_size = [200, 500]
+# lst_seed = [1, 3, 5]
+# lst_buffer_size = [200, 500]
+lst_seed = [1]
+lst_buffer_size = [200]
 count = 0
 output_dir = "experiments/sarl"
 save_model = 0  # set to 1 to save the final model
 save_interim = 0  # set to 1 to save intermediate model state and running params
-device = 'mps'
+device = 'cuda'
 
 for seed in lst_seed:
     for buffer_size in lst_buffer_size:
@@ -49,7 +51,7 @@ for seed in lst_seed:
         exp_id = f"sarl-tinyimg-{buffer_size}-param-{params['idt']}-s-{seed}"
         job_args = f"python main.py  \
             --experiment_id {exp_id} \
-            --model sarl \
+            --model sarl_lora \
             --dataset seq-tinyimg \
             --kw {params['kw']} \
             --alpha {params['alpha']} \
