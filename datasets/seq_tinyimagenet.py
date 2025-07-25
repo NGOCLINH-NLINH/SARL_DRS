@@ -37,8 +37,8 @@ class TinyImagenet(Dataset):
             self.wnids = [x.strip() for x in f.readlines()]
         self.wnid_to_label = {wnid: i for i, wnid in enumerate(self.wnids)}
 
-        self.data = []
-        self.targets = []
+        data_paths = []
+        targets_list = []
 
         print(f'Loading {"train" if self.train else "validation"} data from: {dataset_path}')
 
@@ -50,8 +50,8 @@ class TinyImagenet(Dataset):
                     continue
                 for img_name in os.listdir(class_path):
                     img_path = os.path.join(class_path, img_name)
-                    self.data.append(img_path)
-                    self.targets.append(self.wnid_to_label[wnid])
+                    data_paths.append(img_path)
+                    targets_list.append(self.wnid_to_label[wnid])
         else:
             # Load validation data
             with open(os.path.join(dataset_path, 'val', 'val_annotations.txt'), 'r') as f:
@@ -60,8 +60,11 @@ class TinyImagenet(Dataset):
                     img_name, wnid = parts[0], parts[1]
                     img_path = os.path.join(dataset_path, 'val', 'images', img_name)
                     if wnid in self.wnid_to_label:
-                        self.data.append(img_path)
-                        self.targets.append(self.wnid_to_label[wnid])
+                        data_paths.append(img_path)
+                        targets_list.append(self.wnid_to_label[wnid])
+
+        self.data = np.array(data_paths)
+        self.targets = np.array(targets_list)
 
         print(f'Loaded {len(self.data)} images.')
 
@@ -151,12 +154,11 @@ class SequentialTinyImagenet(ContinualDataset):
         return train, test
 
     def not_aug_dataloader(self, batch_size):
-        transform = transforms.Compose([transforms.ToTensor(), self.get_denormalization_transform()])
-
-        train_dataset = MyTinyImagenet(os.path.join(self.args.tiny_imagenet_path, 'TINYIMG'),
-                            train=True, download=True, transform=transform)
+        transform = transforms.Compose([transforms.ToTensor(), self.get_normalization_transform()])
+        dataset_root = self.args.tiny_imagenet_path
+        train_dataset = MyTinyImagenet(dataset_root,
+                            train=True, download=False, transform=transform)
         train_loader = get_previous_train_loader(train_dataset, batch_size, self)
-
         return train_loader
 
 
