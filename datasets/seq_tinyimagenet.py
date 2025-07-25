@@ -132,17 +132,20 @@ class SequentialTinyImagenet(ContinualDataset):
     def get_data_loaders(self):
         transform = self.TRANSFORM
 
+        dataset_root = self.args.tiny_imagenet_path
+
         test_transform = transforms.Compose(
             [transforms.ToTensor(), self.get_normalization_transform()])
 
-        train_dataset = MyTinyImagenet(os.path.join(self.args.tiny_imagenet_path, 'TINYIMG'),
-                                 train=True, download=True, transform=transform)
+        train_dataset = MyTinyImagenet(dataset_root,
+                                       train=True, download=False, transform=transform)
+
         if self.args.validation:
             train_dataset, test_dataset = get_train_val(train_dataset,
-                                                    test_transform, self.NAME)
+                                                        test_transform, self.NAME)
         else:
-            test_dataset = TinyImagenet(os.path.join(self.args.tiny_imagenet_path, 'TINYIMG'),
-                        train=False, download=True, transform=test_transform)
+            test_dataset = TinyImagenet(dataset_root,
+                                        train=False, download=False, transform=test_transform)
 
         train, test = store_masked_loaders(train_dataset, test_dataset, self)
         return train, test

@@ -20,7 +20,7 @@ def add_experiment_args(parser: ArgumentParser) -> None:
     parser.add_argument('--mnist_seed', type=int, default=0)
     parser.add_argument('--return_index', type=bool, default=False)
     parser.add_argument('--data_root', type=str, default='data')
-    parser.add_argument('--tiny_imagenet_path', type=str, default='/kaggle/input/tiny-imagenet')
+    parser.add_argument('--tiny_imagenet_path', type=str, default='/kaggle/input/tiny-imagenet-200/tiny-imagenet-200')
     parser.add_argument('--model', type=str, required=True, help='Model name.', choices=get_all_models())
     parser.add_argument('--lr', type=float, required=True)
     parser.add_argument('--batch_size', type=int, required=True)
