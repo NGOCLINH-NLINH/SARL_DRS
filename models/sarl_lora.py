@@ -113,44 +113,6 @@ class SARLLoRA(ContinualModel):
 
         self.drs_projection = None
 
-    # def begin_task(self, dataset):
-    #     if self.current_task > 0:
-    #         self.drs_projection = compute_drs_projection(self.net_old, dataset.train_loader, device=self.device)
-    #     else:
-    #         self.drs_projection = None
-
-    # def begin_task(self, dataset):
-    #     if self.current_task > 0:
-    #         print(f"\nTask {self.current_task}: Computing DRS projection from NEW task data using OLD model.")
-    #         self.drs_projection = compute_drs_projection_from_features(
-    #             self.net_old,
-    #             dataset.train_loader,
-    #             device=self.device
-    #         )
-    #     else:
-    #         self.drs_projection = None
-
-    # def begin_task(self, dataset):
-    #     if self.current_task > 0:
-    #         print(f"\nTask {self.current_task}: Computing DRS projection from OLD task gradients (using buffer).")
-    #
-    #         buf_inputs, buf_labels, _ = self.buffer.get_all_data()
-    #         if len(buf_inputs) > 0:
-    #             buf_indices = torch.arange(len(buf_inputs))
-    #             buf_dataset = torch.utils.data.TensorDataset(buf_inputs, buf_labels, buf_indices)
-    #             dataloader_old = torch.utils.data.DataLoader(buf_dataset, batch_size=self.args.batch_size, shuffle=True)
-    #
-    #             self.drs_projection = compute_drs_projection_from_gradient(
-    #                 self.net_old,
-    #                 dataloader_old,
-    #                 device=self.device
-    #             )
-    #         else:
-    #             print("Buffer is empty, cannot compute DRS from gradients. Skipping.")
-    #             self.drs_projection = None
-    #     else:
-    #         self.drs_projection = None
-
     def _setup_hooks(self):
         for hook in self.hooks:
             hook.remove()
@@ -255,14 +217,6 @@ class SARLLoRA(ContinualModel):
 
         loss.backward()
 
-        # if self.drs_projection is not None:
-        #     for name, p in self.net.named_parameters():
-        #         if p.grad is not None and name in self.drs_projection:
-        #             P = self.drs_projection[name]
-        #             grad_flat = p.grad.view(-1)
-        #             grad_projected_flat = P @ (P.T @ grad_flat)
-        #             p.grad.data = grad_projected_flat.view_as(p.data)
-
         if self.feature_subspaces is not None:
             feat_reg_loss = 0
             for name, basis_vectors in self.feature_subspaces.items():
@@ -282,23 +236,12 @@ class SARLLoRA(ContinualModel):
             if len(self.feature_subspaces) > 0:
                 loss += self.lambda_feat_reg * (feat_reg_loss / len(self.feature_subspaces))
 
-        # if self.drs_projection is not None:
-        #     with torch.no_grad():
-        #         for name, p in self.net.named_parameters():
-        #             if p.grad is not None and name in self.drs_projection:
-        #                 P = self.drs_projection[name]
-        #                 original_shape = p.grad.shape
-        #                 grad_flat = p.grad.view(-1)
-        #
-        #                 grad_projected_flat = P @ (P.T @ grad_flat)
-        #                 p.grad.data = grad_projected_flat.view(original_shape)
-
         # Log values
         if hasattr(self, 'writer'):
             self.writer.add_scalar(f'Task {self.current_task}/ce_loss', ce_loss.item(), self.iteration)
             self.writer.add_scalar(f'Task {self.current_task}/loss', loss.item(), self.iteration)
 
-        # loss.backward()
+        loss.backward()
         self.opt.step()
 
         self.buffer.add_data(
