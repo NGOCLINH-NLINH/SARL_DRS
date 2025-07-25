@@ -37,40 +37,38 @@ class TinyImagenet(Dataset):
             self.wnids = [x.strip() for x in f.readlines()]
         self.wnid_to_label = {wnid: i for i, wnid in enumerate(self.wnids)}
 
-        # Use temporary Python lists to collect image data and labels
-        data_list = []
+        # Use temporary Python lists to collect paths and labels
+        data_paths = []
         targets_list = []
 
-        print(f'Loading {"train" if self.train else "validation"} data from: {dataset_path} into memory...')
+        print(f'Scanning {"train" if self.train else "validation"} data paths from: {dataset_path}...')
 
         if self.train:
-            # Load training data
+            # Collect training data paths
             for i, wnid in enumerate(self.wnids):
                 class_path = os.path.join(dataset_path, 'train', wnid, 'images')
                 if not os.path.isdir(class_path):
                     continue
                 for img_name in os.listdir(class_path):
                     img_path = os.path.join(class_path, img_name)
-                    img = Image.open(img_path).convert('RGB')
-                    data_list.append(np.array(img))
+                    data_paths.append(img_path)
                     targets_list.append(self.wnid_to_label[wnid])
         else:
-            # Load validation data
+            # Collect validation data paths
             with open(os.path.join(dataset_path, 'val', 'val_annotations.txt'), 'r') as f:
                 for line in f.readlines():
                     parts = line.strip().split('\t')
                     img_name, wnid = parts[0], parts[1]
                     img_path = os.path.join(dataset_path, 'val', 'images', img_name)
                     if wnid in self.wnid_to_label:
-                        img = Image.open(img_path).convert('RGB')
-                        data_list.append(np.array(img))
+                        data_paths.append(img_path)
                         targets_list.append(self.wnid_to_label[wnid])
 
         # Convert the Python lists to NumPy arrays
-        self.data = np.array(data_list)
+        self.data = np.array(data_paths)
         self.targets = np.array(targets_list)
 
-        print(f'Loaded {len(self.data)} images into memory.')
+        print(f'Found {len(self.data)} images.')
 
     def __len__(self):
         return len(self.data)
@@ -80,7 +78,7 @@ class TinyImagenet(Dataset):
 
         # doing this so that it is consistent with all other datasets
         # to return a PIL Image
-        img = Image.fromarray(img)
+        img = Image.open(img).convert('RGB')
         original_img = img.copy()
 
         if self.transform is not None:
@@ -109,7 +107,7 @@ class MyTinyImagenet(TinyImagenet):
 
         # doing this so that it is consistent with all other datasets
         # to return a PIL Image
-        img = Image.fromarray(img)
+        img = Image.open(img).convert('RGB')
         original_img = img.copy()
 
         not_aug_img = self.not_aug_transform(original_img)
