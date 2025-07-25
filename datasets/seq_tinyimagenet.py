@@ -37,10 +37,11 @@ class TinyImagenet(Dataset):
             self.wnids = [x.strip() for x in f.readlines()]
         self.wnid_to_label = {wnid: i for i, wnid in enumerate(self.wnids)}
 
-        data_paths = []
+        # Use temporary Python lists to collect image data and labels
+        data_list = []
         targets_list = []
 
-        print(f'Loading {"train" if self.train else "validation"} data from: {dataset_path}')
+        print(f'Loading {"train" if self.train else "validation"} data from: {dataset_path} into memory...')
 
         if self.train:
             # Load training data
@@ -50,7 +51,8 @@ class TinyImagenet(Dataset):
                     continue
                 for img_name in os.listdir(class_path):
                     img_path = os.path.join(class_path, img_name)
-                    data_paths.append(img_path)
+                    img = Image.open(img_path).convert('RGB')
+                    data_list.append(np.array(img))
                     targets_list.append(self.wnid_to_label[wnid])
         else:
             # Load validation data
@@ -60,13 +62,15 @@ class TinyImagenet(Dataset):
                     img_name, wnid = parts[0], parts[1]
                     img_path = os.path.join(dataset_path, 'val', 'images', img_name)
                     if wnid in self.wnid_to_label:
-                        data_paths.append(img_path)
+                        img = Image.open(img_path).convert('RGB')
+                        data_list.append(np.array(img))
                         targets_list.append(self.wnid_to_label[wnid])
 
-        self.data = np.array(data_paths)
+        # Convert the Python lists to NumPy arrays
+        self.data = np.array(data_list)
         self.targets = np.array(targets_list)
 
-        print(f'Loaded {len(self.data)} images.')
+        print(f'Loaded {len(self.data)} images into memory.')
 
     def __len__(self):
         return len(self.data)
