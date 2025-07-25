@@ -51,7 +51,7 @@ for seed in lst_seed:
         exp_id = f"sarl-tinyimg-{buffer_size}-param-{params['idt']}-s-{seed}"
         job_args = f"python main.py  \
             --experiment_id {exp_id} \
-            --model sarl \
+            --model sarl_lora \
             --dataset seq-tinyimg \
             --kw {params['kw']} \
             --alpha {params['alpha']} \

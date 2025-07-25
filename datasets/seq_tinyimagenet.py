@@ -30,33 +30,40 @@ class TinyImagenet(Dataset):
         self.target_transform = target_transform
         self.download = download
 
-        if download:
-            if os.path.isdir(root) and len(os.listdir(root)) > 0:
-                print('Download not needed, files already on disk.')
-            else:
-                from google_drive_downloader import GoogleDriveDownloader as gdd
+        dataset_path = self.root
 
-                # https://drive.google.com/file/d/1Sy3ScMBr0F4se8VZ6TAwDYF-nNGAAdxj/view
-                print('Downloading dataset')
-                gdd.download_file_from_google_drive(
-                    file_id='1Sy3ScMBr0F4se8VZ6TAwDYF-nNGAAdxj',
-
-                    dest_path=os.path.join(root, 'tiny-imagenet-processed.zip'),
-                    unzip=True)
+        # Load class IDs and map them to integer labels
+        with open(os.path.join(dataset_path, 'wnids.txt'), 'r') as f:
+            self.wnids = [x.strip() for x in f.readlines()]
+        self.wnid_to_label = {wnid: i for i, wnid in enumerate(self.wnids)}
 
         self.data = []
-        for num in range(20):
-            self.data.append(np.load(os.path.join(
-                root, 'processed/x_%s_%02d.npy' %
-                      ('train' if self.train else 'val', num+1))))
-        self.data = np.concatenate(np.array(self.data))
-
         self.targets = []
-        for num in range(20):
-            self.targets.append(np.load(os.path.join(
-                root, 'processed/y_%s_%02d.npy' %
-                      ('train' if self.train else 'val', num+1))))
-        self.targets = np.concatenate(np.array(self.targets))
+
+        print(f'Loading {"train" if self.train else "validation"} data from: {dataset_path}')
+
+        if self.train:
+            # Load training data
+            for i, wnid in enumerate(self.wnids):
+                class_path = os.path.join(dataset_path, 'train', wnid, 'images')
+                if not os.path.isdir(class_path):
+                    continue
+                for img_name in os.listdir(class_path):
+                    img_path = os.path.join(class_path, img_name)
+                    self.data.append(img_path)
+                    self.targets.append(self.wnid_to_label[wnid])
+        else:
+            # Load validation data
+            with open(os.path.join(dataset_path, 'val', 'val_annotations.txt'), 'r') as f:
+                for line in f.readlines():
+                    parts = line.strip().split('\t')
+                    img_name, wnid = parts[0], parts[1]
+                    img_path = os.path.join(dataset_path, 'val', 'images', img_name)
+                    if wnid in self.wnid_to_label:
+                        self.data.append(img_path)
+                        self.targets.append(self.wnid_to_label[wnid])
+
+        print(f'Loaded {len(self.data)} images.')
 
     def __len__(self):
         return len(self.data)
