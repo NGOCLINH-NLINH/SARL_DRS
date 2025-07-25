@@ -215,8 +215,6 @@ class SARLLoRA(ContinualModel):
         if torch.isnan(loss):
             raise ValueError('NAN Loss')
 
-        loss.backward()
-
         if self.feature_subspaces is not None:
             feat_reg_loss = 0
             for name, basis_vectors in self.feature_subspaces.items():
