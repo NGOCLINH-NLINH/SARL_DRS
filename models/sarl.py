@@ -330,6 +330,23 @@ class SARL(ContinualModel):
             self.scheduler = torch.optim.lr_scheduler.MultiStepLR(self.opt, self.args.lr_steps, gamma=0.1)
         else:
             self.scheduler = None
+    def save_checkpoint(self, filepath):
+        print(f"Saving checkpoint to {filepath}...")
+        state = {
+            'current_task': self.current_task,
+            'net_state_dict': self.net.state_dict(),
+            'opt_state_dict': self.opt.state_dict(),
+            'buffer_data': self.buffer.get_all_data(),
+            'op': self.op,
+            'sample_counts': self.sample_counts,
+            'op_sum': self.op_sum,
+            'learned_classes': self.learned_classes
+        }
+        if self.scheduler is not None:
+            state['scheduler_state_dict'] = self.scheduler.state_dict()
+
+        torch.save(state, filepath)
+        print("Checkpoint saved successfully.")
 
     def load_checkpoint(self, filepath):
         print(f"Loading checkpoint from {filepath}...")
