@@ -114,6 +114,20 @@ def train(model: ContinualModel, dataset: ContinualDataset,
     model.net.to(model.device)
     results, results_mask_classes = [], []
 
+    checkpoint_dir = os.path.join(args.output_dir, "checkpoints", args.experiment_id)
+    os.makedirs(checkpoint_dir, exist_ok=True)
+    checkpoint_path = os.path.join(checkpoint_dir, "checkpoint.pth")
+
+    start_task = 0
+
+    if os.path.exists(checkpoint_path):
+        print(f"--- Found checkpoint at {checkpoint_path} ---")
+        start_task = model.load_checkpoint(checkpoint_path)
+        print(f"--- Checkpoint loaded. Resuming from task {start_task} ---")
+
+    if args.csv_log:
+        csv_logger = CsvLogger(dataset.SETTING, dataset.NAME, model.NAME, args.output_dir, args.experiment_id)
+
     model_stash = create_stash(model, args, dataset)
 
     lst_ema_models = ['plastic_model', 'stable_model', 'ema_model']
@@ -156,7 +170,7 @@ def train(model: ContinualModel, dataset: ContinualDataset,
     model.num_tasks = dataset.N_TASKS
     model.num_classes = dataset.N_TASKS * dataset.N_CLASSES_PER_TASK
 
-    for t in range(dataset.N_TASKS):
+    for t in range(start_task, dataset.N_TASKS):
         model.net.train()
         train_loader, test_loader = dataset.get_data_loaders()
         if hasattr(model, 'begin_task'):
@@ -223,6 +237,10 @@ def train(model: ContinualModel, dataset: ContinualDataset,
 
         if hasattr(model, 'end_task'):
             model.end_task(dataset)
+
+        print(f"\n--- Saving checkpoint after completing task {t} ---")
+        model.save_checkpoint(checkpoint_path)
+        print(f"--- Checkpoint saved to {checkpoint_path} ---")
 
         print()
         print('*' * 30)

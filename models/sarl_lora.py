@@ -397,3 +397,45 @@ class SARLLoRA(ContinualModel):
             self.scheduler = torch.optim.lr_scheduler.MultiStepLR(self.opt, self.args.lr_steps, gamma=0.1)
         else:
             self.scheduler = None
+
+    def save_checkpoint(self, filepath):
+        print(f"Saving checkpoint to {filepath}...")
+        state = {
+            'current_task': self.current_task,
+            'net_state_dict': self.net.state_dict(),
+            'opt_state_dict': self.opt.state_dict(),
+            'buffer_data': self.buffer.get_all_data(),
+            'op': self.op,
+            'sample_counts': self.sample_counts,
+            'op_sum': self.op_sum,
+            'learned_classes': self.learned_classes
+        }
+        if self.scheduler is not None:
+            state['scheduler_state_dict'] = self.scheduler.state_dict()
+
+        torch.save(state, filepath)
+        print("Checkpoint saved successfully.")
+
+    def load_checkpoint(self, filepath):
+        print(f"Loading checkpoint from {filepath}...")
+        checkpoint = torch.load(filepath)
+
+        self.net.load_state_dict(checkpoint['net_state_dict'])
+        self.current_task = checkpoint['current_task']
+
+        buf_inputs, buf_labels, buf_logits = checkpoint['buffer_data']
+        self.buffer.add_data(examples=buf_inputs, labels=buf_labels, logits=buf_logits)
+
+        self.op = checkpoint['op']
+        self.sample_counts = checkpoint['sample_counts']
+        self.op_sum = checkpoint['op_sum']
+        self.learned_classes = checkpoint['learned_classes']
+
+        self.get_optimizer()
+        self.opt.load_state_dict(checkpoint['opt_state_dict'])
+        if self.scheduler is not None and 'scheduler_state_dict' in checkpoint:
+            self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+
+        self.net_old = deepcopy(self.net)
+
+        print(f"Checkpoint loaded. Resuming from task {self.current_task}.")
