@@ -439,3 +439,4 @@ class SARLLoRA(ContinualModel):
         self.net_old = deepcopy(self.net)
 
         print(f"Checkpoint loaded. Resuming from task {self.current_task}.")
+        return self.current_task
