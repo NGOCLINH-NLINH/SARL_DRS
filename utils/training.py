@@ -256,6 +256,8 @@ def train(model: ContinualModel, dataset: ContinualDataset,
             if 'sail' in args.model:
                 model.adjust_learning_rate(epoch)
 
+            model.epoch = epoch
+
             if hasattr(model, 'end_epoch'):
                 if args.model == "scommer":
                     model.end_epoch(epoch)
