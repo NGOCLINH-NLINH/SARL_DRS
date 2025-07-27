@@ -409,6 +409,7 @@ class SARLLoRA(ContinualModel):
             'sample_counts': self.sample_counts,
             'op_sum': self.op_sum,
             'learned_classes': self.learned_classes,
+            "pos_groups": self.pos_groups
         }
         if self.scheduler is not None:
             state['scheduler_state_dict'] = self.scheduler.state_dict()
@@ -431,6 +432,8 @@ class SARLLoRA(ContinualModel):
         self.op_sum = checkpoint['op_sum']
         self.learned_classes = checkpoint['learned_classes']
         self.learned_classes = [int(c) for c in checkpoint['learned_classes']]
+
+        self.pos_groups = checkpoint.get('pos_groups', {})
 
         self.get_optimizer()
         self.opt.load_state_dict(checkpoint['opt_state_dict'])
