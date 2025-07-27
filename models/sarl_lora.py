@@ -444,6 +444,7 @@ class SARLLoRA(ContinualModel):
             self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
 
         self.net_old = deepcopy(self.net)
+        self.eval_prototypes = True
 
         print(f"Checkpoint loaded. Resuming from task {self.current_task}.")
         return self.current_task
