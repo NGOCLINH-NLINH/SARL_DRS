@@ -408,7 +408,8 @@ class SARLLoRA(ContinualModel):
             'op': self.op,
             'sample_counts': self.sample_counts,
             'op_sum': self.op_sum,
-            'learned_classes': self.learned_classes
+            'learned_classes': self.learned_classes,
+            "pos_groups": self.pos_groups
         }
         if self.scheduler is not None:
             state['scheduler_state_dict'] = self.scheduler.state_dict()
@@ -418,7 +419,7 @@ class SARLLoRA(ContinualModel):
 
     def load_checkpoint(self, filepath):
         print(f"Loading checkpoint from {filepath}...")
-        checkpoint = torch.load(filepath)
+        checkpoint = torch.load(filepath, weights_only=False)
 
         self.net.load_state_dict(checkpoint['net_state_dict'])
         self.current_task = checkpoint['current_task']
@@ -429,7 +430,9 @@ class SARLLoRA(ContinualModel):
         self.op = checkpoint['op']
         self.sample_counts = checkpoint['sample_counts']
         self.op_sum = checkpoint['op_sum']
-        self.learned_classes = checkpoint['learned_classes']
+        self.learned_classes = [int(c) for c in checkpoint['learned_classes']]
+
+        self.pos_groups = checkpoint.get('pos_groups', {})
 
         self.get_optimizer()
         self.opt.load_state_dict(checkpoint['opt_state_dict'])
@@ -437,6 +440,7 @@ class SARLLoRA(ContinualModel):
             self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
 
         self.net_old = deepcopy(self.net)
+        self.eval_prototypes = True
 
         print(f"Checkpoint loaded. Resuming from task {self.current_task}.")
         return self.current_task
