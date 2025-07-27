@@ -187,12 +187,12 @@ def train(model: ContinualModel, dataset: ContinualDataset,
             # results[t-1] = results[t-1] + accs[0]
 
             acc_list, acc_mask_list = evaluate(model, dataset, last=True)
-            results.append(acc_list[t - 1])
+            results.append(acc_list[0])
 
             # if dataset.SETTING == 'class-il':
             #     results_mask_classes[t-1] = results_mask_classes[t-1] + accs[1]
             if dataset.SETTING == 'class-il':
-                results_mask_classes.append(acc_mask_list[t - 1])
+                results_mask_classes.append(acc_mask_list[0])
 
             # for ema_model in lst_ema_models:
             #     if hasattr(model, ema_model):
@@ -207,7 +207,7 @@ def train(model: ContinualModel, dataset: ContinualDataset,
                     ema_acc_list, ema_mask_list = evaluate(
                         model, dataset, eval_ema=True, ema_model=ema_model, last=True
                     )
-                    ema_results[ema_model].append(ema_acc_list[t - 1])
+                    ema_results[ema_model].append(ema_acc_list[0])
                     if dataset.SETTING == 'class-il':
                         ema_results_mask_classes[ema_model].append(ema_mask_list[t - 1])
 
