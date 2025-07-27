@@ -125,6 +125,9 @@ def train(model: ContinualModel, dataset: ContinualDataset,
         start_task = model.load_checkpoint(checkpoint_path)
         print(f"--- Checkpoint loaded. Resuming from task {start_task} ---")
 
+    results = [0. for _ in range(start_task)]
+    results_mask_classes = [0. for _ in range(start_task)]
+
     if args.csv_log:
         csv_logger = CsvLogger(dataset.SETTING, dataset.NAME, model.NAME, args.output_dir, args.experiment_id)
 
