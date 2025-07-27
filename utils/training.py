@@ -112,7 +112,6 @@ def train(model: ContinualModel, dataset: ContinualDataset,
     """
 
     model.net.to(model.device)
-    results, results_mask_classes = [], []
 
     checkpoint_dir = os.path.join(args.output_dir, "checkpoints", args.experiment_id)
     os.makedirs(checkpoint_dir, exist_ok=True)
@@ -139,9 +138,14 @@ def train(model: ContinualModel, dataset: ContinualDataset,
     ema_results_mask_classes = {}
     ema_task_perf_paths = {}
 
-    for ema_model in lst_ema_models:
-        if hasattr(model, ema_model):
-            ema_results[ema_model], ema_results_mask_classes[ema_model] = [], []
+    # for ema_model in lst_ema_models:
+    #     if hasattr(model, ema_model):
+    #         ema_results[ema_model], ema_results_mask_classes[ema_model] = [], []
+
+    if hasattr(model, 'ema_models'):
+        for k in model.ema_models:
+            ema_results[k] = [0. for _ in range(start_task)]
+            ema_results_mask_classes[k] = [0. for _ in range(start_task)]
 
     if args.csv_log:
         csv_logger = CsvLogger(dataset.SETTING, dataset.NAME, model.NAME, args.output_dir, args.experiment_id)
@@ -179,19 +183,42 @@ def train(model: ContinualModel, dataset: ContinualDataset,
         if hasattr(model, 'begin_task'):
             model.begin_task(dataset)
         if t:
-            accs = evaluate(model, dataset, last=True)
-            results[t-1] = results[t-1] + accs[0]
+            # accs = evaluate(model, dataset, last=True)
+            # results[t-1] = results[t-1] + accs[0]
 
+            acc_list, acc_mask_list = evaluate(model, dataset, last=True)
+            results.append(acc_list[t - 1])
+
+            # if dataset.SETTING == 'class-il':
+            #     results_mask_classes[t-1] = results_mask_classes[t-1] + accs[1]
             if dataset.SETTING == 'class-il':
-                results_mask_classes[t-1] = results_mask_classes[t-1] + accs[1]
+                results_mask_classes.append(acc_mask_list[t - 1])
 
-            for ema_model in lst_ema_models:
-                if hasattr(model, ema_model):
-                    ema_accs = evaluate(model, dataset, eval_ema=True, ema_model=ema_model, last=True)
-                    ema_results[ema_model][t - 1] = ema_results[ema_model][t - 1] + ema_accs[0]
+            # for ema_model in lst_ema_models:
+            #     if hasattr(model, ema_model):
+            #         ema_accs = evaluate(model, dataset, eval_ema=True, ema_model=ema_model, last=True)
+            #         ema_results[ema_model][t - 1] = ema_results[ema_model][t - 1] + ema_accs[0]
+            #
+            #         if dataset.SETTING == 'class-il':
+            #             ema_results_mask_classes[ema_model][t - 1] = ema_results_mask_classes[ema_model][t - 1] + ema_accs[1]
 
+            if hasattr(model, 'ema_models'):
+                for ema_model in model.ema_models:
+                    ema_acc_list, ema_mask_list = evaluate(
+                        model, dataset, eval_ema=True, ema_model=ema_model, last=True
+                    )
+                    ema_results[ema_model].append(ema_acc_list[t - 1])
                     if dataset.SETTING == 'class-il':
-                        ema_results_mask_classes[ema_model][t - 1] = ema_results_mask_classes[ema_model][t - 1] + ema_accs[1]
+                        ema_results_mask_classes[ema_model].append(ema_mask_list[t - 1])
+
+        else:
+            # Initial placeholder for task 0
+            results.append(0.)
+            results_mask_classes.append(0.)
+            if hasattr(model, 'ema_models'):
+                for ema_model in model.ema_models:
+                    ema_results[ema_model].append(0.)
+                    ema_results_mask_classes[ema_model].append(0.)
 
         n_batches = len(train_loader)
         for epoch in range(args.n_epochs):
