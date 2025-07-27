@@ -418,7 +418,7 @@ class SARLLoRA(ContinualModel):
 
     def load_checkpoint(self, filepath):
         print(f"Loading checkpoint from {filepath}...")
-        checkpoint = torch.load(filepath)
+        checkpoint = torch.load(filepath, weights_only=False)
 
         self.net.load_state_dict(checkpoint['net_state_dict'])
         self.current_task = checkpoint['current_task']
