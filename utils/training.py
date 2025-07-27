@@ -209,7 +209,7 @@ def train(model: ContinualModel, dataset: ContinualDataset,
                     )
                     ema_results[ema_model].append(ema_acc_list[0])
                     if dataset.SETTING == 'class-il':
-                        ema_results_mask_classes[ema_model].append(ema_mask_list[t - 1])
+                        ema_results_mask_classes[ema_model].append(ema_mask_list[0])
 
         else:
             # Initial placeholder for task 0

@@ -412,7 +412,8 @@ class SARLLoRA(ContinualModel):
             'op': self.op,
             'sample_counts': self.sample_counts,
             'op_sum': self.op_sum,
-            'learned_classes': self.learned_classes
+            'learned_classes': self.learned_classes,
+            'running_op': self.running_op
         }
         if self.scheduler is not None:
             state['scheduler_state_dict'] = self.scheduler.state_dict()
@@ -431,6 +432,7 @@ class SARLLoRA(ContinualModel):
         self.buffer.add_data(examples=buf_inputs, labels=buf_labels, logits=buf_logits)
 
         self.op = checkpoint['op']
+        self.running_op = checkpoint['running_op']
         self.sample_counts = checkpoint['sample_counts']
         self.op_sum = checkpoint['op_sum']
         self.learned_classes = checkpoint['learned_classes']
