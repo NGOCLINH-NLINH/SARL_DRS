@@ -141,6 +141,10 @@ class SARLLoRA(ContinualModel):
             self.feature_subspaces = None
 
         self._setup_hooks()
+        print('learned_classes:', self.learned_classes)
+        print('op shape:', self.op.shape)
+        print('running_op norm:', self.running_op.norm(dim=1))
+        print('op norm:', self.op.norm(dim=1))
 
     def observe(self, inputs, labels, not_aug_inputs):
         real_batch_size = inputs.shape[0]
@@ -430,6 +434,7 @@ class SARLLoRA(ContinualModel):
         self.sample_counts = checkpoint['sample_counts']
         self.op_sum = checkpoint['op_sum']
         self.learned_classes = checkpoint['learned_classes']
+        self.learned_classes = [int(c) for c in checkpoint['learned_classes']]
 
         self.get_optimizer()
         self.opt.load_state_dict(checkpoint['opt_state_dict'])
