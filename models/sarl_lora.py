@@ -128,6 +128,7 @@ class SARLLoRA(ContinualModel):
                 self.hooks.append(module.register_forward_hook(get_output_hook(name)))
 
     def begin_task(self, dataset):
+        print(f"DEBUG: Entering begin_task. Current task is: {self.current_task}")
         if self.current_task > 0:
             print(f"\nTask {self.current_task}: Computing feature_subspaces... (LAMBDA_FEAT_REG = {self.lambda_feat_reg})")
 
@@ -263,6 +264,10 @@ class SARLLoRA(ContinualModel):
             print('!' * 30)
             print('Evaluating Prototypes for the New Classes')
             # Calculate CLass Prototypes
+
+            self.running_op.zero_()
+            self.running_sample_counts.zero_()
+
             X = []
             Y = []
             for data in dataset.train_loader:
