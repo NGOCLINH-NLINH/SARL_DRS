@@ -49,7 +49,7 @@ for seed in lst_seed:
         exp_id = f"sarl-cifar10-{buffer_size}-param-{params['idt']}-s-{seed}"
         job_args = f"python main.py  \
             --experiment_id {exp_id} \
-            --model sarl_lora \
+            --model sarl \
             --dataset seq-cifar10 \
             --kw {params['kw']} \
             --alpha {params['alpha']} \
