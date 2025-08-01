@@ -128,7 +128,6 @@ class SARLLoRA(ContinualModel):
                 self.hooks.append(module.register_forward_hook(get_output_hook(name)))
 
     def begin_task(self, dataset):
-        print(f"DEBUG: Entering begin_task. Current task is: {self.current_task}")
         if self.current_task > 0:
             print(f"\nTask {self.current_task}: Computing feature_subspaces... (LAMBDA_FEAT_REG = {self.lambda_feat_reg})")
 
