@@ -215,8 +215,6 @@ class SARLLoRA(ContinualModel):
         if torch.isnan(loss):
             raise ValueError('NAN Loss')
 
-        loss.backward()
-
         if self.feature_subspaces is not None:
             feat_reg_loss = 0
             for name, basis_vectors in self.feature_subspaces.items():
@@ -241,6 +239,7 @@ class SARLLoRA(ContinualModel):
             self.writer.add_scalar(f'Task {self.current_task}/ce_loss', ce_loss.item(), self.iteration)
             self.writer.add_scalar(f'Task {self.current_task}/loss', loss.item(), self.iteration)
 
+        loss.backward()
         self.opt.step()
 
         self.buffer.add_data(
