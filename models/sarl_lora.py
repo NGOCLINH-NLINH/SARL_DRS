@@ -129,18 +129,44 @@ class SARLLoRA(ContinualModel):
 
     def begin_task(self, dataset):
         if self.current_task > 0:
-            print(f"\nTask {self.current_task}: Computing feature_subspaces... (LAMBDA_FEAT_REG = {self.lambda_feat_reg})")
+            print(
+                f"\nTask {self.current_task}: Computing feature_subspaces... (LAMBDA_FEAT_REG = {self.lambda_feat_reg})")
+
+            if not self.buffer.is_empty():
+                buf_inputs, buf_labels, _ = self.buffer.get_all_data(transform=self.transform)
+                buf_dataset = torch.utils.data.TensorDataset(buf_inputs, buf_labels)
+                try:
+                    combined_dataset = torch.utils.data.ConcatDataset([
+                        buf_dataset,
+                        dataset.train_loader.dataset  # nếu train_loader có .dataset
+                    ])
+                except AttributeError:
+                    temp_inputs, temp_labels = [], []
+                    for x, y, *_ in dataset.train_loader:
+                        temp_inputs.append(x)
+                        temp_labels.append(y)
+                    train_inputs = torch.cat(temp_inputs, dim=0)
+                    train_labels = torch.cat(temp_labels, dim=0)
+                    train_dataset = torch.utils.data.TensorDataset(train_inputs, train_labels)
+                    combined_dataset = torch.utils.data.ConcatDataset([buf_dataset, train_dataset])
+
+                combined_loader = DataLoader(
+                    combined_dataset,
+                    batch_size=self.args.batch_size,
+                    shuffle=True,
+                    num_workers=0
+                )
+            else:
+                combined_loader = dataset.train_loader
 
             self.feature_subspaces = compute_feature_subspaces(
                 self.net_old,
-                dataset.train_loader,
+                combined_loader,
                 self.target_layers_for_reg,
                 self.device
             )
         else:
             self.feature_subspaces = None
-
-        self._setup_hooks()
 
     def observe(self, inputs, labels, not_aug_inputs):
         real_batch_size = inputs.shape[0]
