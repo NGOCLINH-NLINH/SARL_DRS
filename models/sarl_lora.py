@@ -134,25 +134,17 @@ class SARLLoRA(ContinualModel):
 
             if not self.buffer.is_empty():
                 buf_inputs, buf_labels, _ = self.buffer.get_all_data(transform=self.transform)
-                dummy_not_aug = torch.zeros_like(buf_inputs)
-                buf_dataset = torch.utils.data.TensorDataset(buf_inputs, buf_labels, dummy_not_aug)
 
-                try:
-                    combined_dataset = torch.utils.data.ConcatDataset([
-                        buf_dataset,
-                        dataset.train_loader.dataset
-                    ])
-                except AttributeError:
-                    temp_inputs, temp_labels, temp_not_aug = [], [], []
-                    for x, y, not_aug in dataset.train_loader:
-                        temp_inputs.append(x)
-                        temp_labels.append(y)
-                        temp_not_aug.append(not_aug)
-                    train_inputs = torch.cat(temp_inputs, dim=0)
-                    train_labels = torch.cat(temp_labels, dim=0)
-                    train_not_aug = torch.cat(temp_not_aug, dim=0)
-                    train_dataset = torch.utils.data.TensorDataset(train_inputs, train_labels, train_not_aug)
-                    combined_dataset = torch.utils.data.ConcatDataset([buf_dataset, train_dataset])
+                buf_inputs = buf_inputs.cpu()
+                buf_labels = buf_labels.cpu()
+                buf_not_aug = buf_inputs.clone()
+
+                buf_dataset = torch.utils.data.TensorDataset(buf_inputs, buf_labels, buf_not_aug)
+
+                combined_dataset = torch.utils.data.ConcatDataset([
+                    buf_dataset,
+                    dataset.train_loader.dataset
+                ])
 
                 combined_loader = DataLoader(
                     combined_dataset,
