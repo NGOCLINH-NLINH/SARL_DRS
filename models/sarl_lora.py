@@ -135,15 +135,35 @@ class SARLLoRA(ContinualModel):
             if not self.buffer.is_empty():
                 buf_inputs, buf_labels, _ = self.buffer.get_all_data(transform=self.transform)
 
+                # Đưa về CPU
                 buf_inputs = buf_inputs.cpu()
-                buf_labels = buf_labels.cpu()
+                buf_labels = buf_labels.cpu().long()
                 buf_not_aug = buf_inputs.clone()
 
                 buf_dataset = torch.utils.data.TensorDataset(buf_inputs, buf_labels, buf_not_aug)
 
+                def to_tensor_dataset(orig_dataset):
+                    inputs_list, labels_list, not_aug_list = [], [], []
+                    for x, y, not_aug in orig_dataset:
+                        if not torch.is_tensor(y):
+                            y = torch.tensor(y, dtype=torch.long)
+                        inputs_list.append(x)
+                        labels_list.append(y)
+                        not_aug_list.append(not_aug)
+                    return torch.utils.data.TensorDataset(
+                        torch.stack(inputs_list),
+                        torch.stack(labels_list),
+                        torch.stack(not_aug_list)
+                    )
+
+                if hasattr(dataset.train_loader, "dataset"):
+                    train_dataset = to_tensor_dataset(dataset.train_loader.dataset)
+                else:
+                    train_dataset = dataset.train_loader.dataset
+
                 combined_dataset = torch.utils.data.ConcatDataset([
                     buf_dataset,
-                    dataset.train_loader.dataset
+                    train_dataset
                 ])
 
                 combined_loader = DataLoader(
