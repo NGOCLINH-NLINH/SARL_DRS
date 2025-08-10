@@ -26,12 +26,12 @@ def compute_feature_subspaces(net_old, dataloader_new, target_layers, device, va
         if name in target_layers:
             hooks.append(module.register_forward_hook(get_output_features_hook(name)))
 
-    MAX_BATCHES_FOR_FEATURES = 319
+    # MAX_BATCHES_FOR_FEATURES = 319
 
     with torch.no_grad():
         for i, (inputs, _, _) in enumerate(tqdm(dataloader_new, desc="Collecting Output Features")):
-            if i >= MAX_BATCHES_FOR_FEATURES:
-                break
+            # if i >= MAX_BATCHES_FOR_FEATURES:
+            #     break
             model_for_feature_extraction(inputs.to(device))
 
     for hook in hooks:
