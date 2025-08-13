@@ -159,6 +159,8 @@ class SARLLoRA(ContinualModel):
         else:
             self.feature_subspaces = None
 
+        self._setup_hooks()
+
     def observe(self, inputs, labels, not_aug_inputs):
         real_batch_size = inputs.shape[0]
         self.opt.zero_grad()
