@@ -158,6 +158,7 @@ class SARLLoRA(ContinualModel):
                 self.feature_subspaces = None
         else:
             self.feature_subspaces = None
+        self._setup_hooks()
 
     def observe(self, inputs, labels, not_aug_inputs):
         real_batch_size = inputs.shape[0]
@@ -167,6 +168,26 @@ class SARLLoRA(ContinualModel):
         if not self.buffer.is_empty():
             buf_inputs, buf_labels, buf_logits = self.buffer.get_data(self.args.minibatch_size, transform=self.transform)
             buff_out, buff_activations = self.net(buf_inputs, return_activations=True)
+
+            if self.feature_subspaces is not None:
+                feat_reg_loss = 0
+                for name, basis_vectors in self.feature_subspaces.items():
+                    if name in self.feature_maps_new:
+                        current_features = self.feature_maps_new[name]
+                        flat_features = current_features.view(current_features.shape[0], -1)
+                        norm_current_features_sq = torch.norm(flat_features, p=2) ** 2 + 1e-8
+
+                        P_basis = basis_vectors.T
+                        temp = flat_features @ P_basis
+                        projected_features = temp @ P_basis.T
+
+                        orthogonal_component = flat_features - projected_features
+                        normalized_loss = torch.norm(orthogonal_component, p=2) ** 2 / norm_current_features_sq
+                        feat_reg_loss += normalized_loss
+
+                if len(self.feature_subspaces) > 0:
+                    loss += self.lambda_feat_reg * (feat_reg_loss / len(self.feature_subspaces))
+
             buff_feats = buff_activations['feat']
             reg_loss = self.args.alpha * F.mse_loss(buff_out, buf_logits)
 
@@ -231,25 +252,6 @@ class SARLLoRA(ContinualModel):
 
         if torch.isnan(loss):
             raise ValueError('NAN Loss')
-
-        if self.feature_subspaces is not None:
-            feat_reg_loss = 0
-            for name, basis_vectors in self.feature_subspaces.items():
-                if name in self.feature_maps_new:
-                    current_features = self.feature_maps_new[name]
-                    flat_features = current_features.view(current_features.shape[0], -1)
-                    norm_current_features_sq = torch.norm(flat_features, p=2) ** 2 + 1e-8
-
-                    P_basis = basis_vectors.T
-                    temp = flat_features @ P_basis
-                    projected_features = temp @ P_basis.T
-
-                    orthogonal_component = flat_features - projected_features
-                    normalized_loss = torch.norm(orthogonal_component, p=2) ** 2 / norm_current_features_sq
-                    feat_reg_loss += normalized_loss
-
-            if len(self.feature_subspaces) > 0:
-                loss += self.lambda_feat_reg * (feat_reg_loss / len(self.feature_subspaces))
 
         # Log values
         if hasattr(self, 'writer'):
