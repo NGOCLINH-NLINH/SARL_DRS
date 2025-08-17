@@ -62,7 +62,7 @@ class SARLLoRA(ContinualModel):
 
     def __init__(self, backbone, loss, args, transform):
         super(SARLLoRA, self).__init__(backbone, loss, args, transform)
-        self.lambda_feat_reg = 0.4
+        self.lambda_feat_reg = 0.2
         self.feature_subspaces = None
         self.target_layers_for_reg = [
             'layer1', 'layer2', 'layer3', 'layer4', 'linear'
