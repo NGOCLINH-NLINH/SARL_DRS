@@ -51,7 +51,7 @@ def get_parser() -> ArgumentParser:
     parser.add_argument('--use_lr_scheduler', type=int, default=1)
     parser.add_argument('--lr_steps', type=int, nargs='*', default=[70, 90])
 
-    parser.add_argument('--scheduled_lambda', type=float, default=0.1,
+    parser.add_argument('--scheduled_lambda', type=float, default=0.4,
                         help='Lambda value to use for early tasks.')
     parser.add_argument('--lambda_stop_task', type=int, default=3,
                         help='The task number from which lambda will be turned off.')
