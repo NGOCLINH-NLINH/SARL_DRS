@@ -50,6 +50,12 @@ def get_parser() -> ArgumentParser:
     parser.add_argument('--warmup_epochs', type=int, default=5)
     parser.add_argument('--use_lr_scheduler', type=int, default=1)
     parser.add_argument('--lr_steps', type=int, nargs='*', default=[70, 90])
+
+    parser.add_argument('--scheduled_lambda', type=float, default=0.1,
+                        help='Lambda value to use for early tasks.')
+    parser.add_argument('--lambda_stop_task', type=int, default=3,
+                        help='The task number from which lambda will be turned off.')
+
     return parser
 
 
@@ -62,7 +68,8 @@ class SARLLoRA(ContinualModel):
 
     def __init__(self, backbone, loss, args, transform):
         super(SARLLoRA, self).__init__(backbone, loss, args, transform)
-        self.lambda_feat_reg = 0.4
+        # self.lambda_feat_reg = 0.4
+        self.lambda_feat_reg = None
         self.feature_subspaces = None
         self.target_layers_for_reg = [
             'layer1', 'layer2', 'layer3', 'layer4', 'linear'
@@ -128,8 +135,10 @@ class SARLLoRA(ContinualModel):
                 self.hooks.append(module.register_forward_hook(get_output_hook(name)))
 
     def begin_task(self, dataset):
-        if self.current_task > 0:
-            print(f"\nTask {self.current_task}: Computing feature_subspaces... (LAMBDA_FEAT_REG = {self.lambda_feat_reg})")
+        if 0 < self.current_task < self.args.lambda_stop_task:
+            self.lambda_feat_reg = self.args.scheduled_lambda
+            print(f"\nTask {self.current_task}: Lambda ON. Set to {self.lambda_feat_reg}")
+            print(f"\nTask {self.current_task}: Computing feature_subspaces...")
 
             self.feature_subspaces = compute_feature_subspaces(
                 self.net_old,
@@ -139,6 +148,8 @@ class SARLLoRA(ContinualModel):
             )
         else:
             self.feature_subspaces = None
+            self.lambda_feat_reg = 0
+            print(f"\nTask {self.current_task}: Lambda OFF.")
 
         self._setup_hooks()
 
