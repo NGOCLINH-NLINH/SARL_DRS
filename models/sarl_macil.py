@@ -113,19 +113,18 @@ class SARLMACIL(ContinualModel):
         return torch.cat(embedding_list, dim=0)
 
     def _displacement(self, old_embeds, new_embeds, old_prototypes, sigma=1.0):
-        Y1 = old_embeds.numpy()
-        Y2 = new_embeds.numpy()
-        embedding_old = old_prototypes.cpu().numpy()
+        old_embeds = old_embeds.to(self.device)
+        new_embeds = new_embeds.to(self.device)
+        old_prototypes = old_prototypes.to(self.device)
 
-        DY = Y2 - Y1
-        distance = np.sum((np.tile(Y1[None, :, :], [embedding_old.shape[0], 1, 1]) - np.tile(
-            embedding_old[:, None, :], [1, Y1.shape[0], 1])) ** 2, axis=2)
-        W = np.exp(-distance / (2 * sigma ** 2)) + 1e-5
-        W_norm = W / np.tile(np.sum(W, axis=1)[:, None], [1, W.shape[1]])
-        displacement_np = np.sum(np.tile(W_norm[:, :, None], [
-            1, 1, DY.shape[1]]) * np.tile(DY[None, :, :], [W.shape[0], 1, 1]), axis=1)
+        DY = new_embeds - old_embeds  # Shape: (N, D)
+        dist = torch.cdist(old_prototypes, old_embeds, p=2) ** 2
 
-        return torch.from_numpy(displacement_np).to(self.device)
+        W = torch.exp(-dist / (2 * sigma ** 2)) + 1e-5  # (C, N)
+        W = W / W.sum(dim=1, keepdim=True)  # (C, N)
+        displacement = torch.bmm(W.unsqueeze(1), DY.unsqueeze(0).expand(W.size(0), *DY.size()))[:, 0, :]
+
+        return displacement  # Tensor (C, D)
 
     def observe(self, inputs, labels, not_aug_inputs):
         real_batch_size = inputs.shape[0]
@@ -301,7 +300,7 @@ class SARLMACIL(ContinualModel):
         self.net_old = deepcopy(self.net)
         self.net_old.eval()
 
-        if self.current_task > 0 and self.args.use_msc:
+        if self.current_task > 0:
             print('=' * 50)
             print(f'Applying Mean Shift Compensation for Task {self.current_task}')
 
