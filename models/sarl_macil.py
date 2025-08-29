@@ -49,7 +49,7 @@ def get_parser() -> ArgumentParser:
 
     parser.add_argument('--cc', type=int, default=1)
     parser.add_argument('--cov_weight', type=float, default=0.1)
-    parser.add_argument('--cov_shrink_alpha', type=float, default=0.1)
+    parser.add_argument('--cov_shrink_alpha', type=float, default=0.5)
     return parser
 
 
@@ -103,7 +103,7 @@ class SARLMACIL(ContinualModel):
     # -------------------------
     # Covariance Calibration utils
     # -------------------------
-    def _shrink_cov(self, cov, alpha=0.1):
+    def _shrink_cov(self, cov, alpha=0.5):
         """
         Simple Ledoit-Wolf-ish shrinkage toward diagonal/identity:
         cov: torch.Tensor (D,D)
@@ -151,33 +151,35 @@ class SARLMACIL(ContinualModel):
                     feat_dict[lab].append(feats[i])
 
         # build class_means & covs
-        D = next(iter(feat_dict.values()))[0].shape[0] if len(feat_dict) > 0 else self.op.size(1)
-        C = max(self.learned_classes) + 1 if len(self.learned_classes) > 0 else 0
+        num_classes = num_classes_dict[self.args.dataset]
+        D = self.op.size(1)
 
-        # initialize containers for all classes (we'll fill known ones)
-        self.class_means = torch.zeros((max(1, C), D), device=self.device)
-        self.class_invcovs = torch.zeros((max(1, C), D, D), device=self.device)
+        self.class_means = torch.zeros((num_classes, D), device=self.device)
+        self.class_invcovs = torch.zeros((num_classes, D, D), device=self.device)
 
         for c in self.learned_classes:
             if c not in feat_dict or len(feat_dict[c]) == 0:
-                # fallback: use prototype as mean and identity cov
                 self.class_means[c] = self.op[c].detach()
                 self.class_invcovs[c] = torch.eye(D, device=self.device)
                 continue
 
-            feats_c = torch.stack(feat_dict[c], dim=0)  # (Nc, D)
-            mean_c = feats_c.mean(dim=0).to(self.device)
-            # covariance: use torch.cov on transpose (requires float64 for torch.cov)
-            cov_c = torch.tensor(feats_c, dtype=torch.float64).T
-            cov_c = torch.cov(cov_c).to(self.device)  # (D, D)
-            cov_c = cov_c.float()
-            # shrink
+            feats_c = torch.stack(feat_dict[c], dim=0)          # (Nc, D) on CPU
+            mean_c = feats_c.mean(dim=0).to(self.device)        # (D,)
+
+            X = feats_c.double()                                # (Nc, D) float64
+            if X.size(0) >= 2:
+                cov_c = torch.cov(X.T)                          # (D, D), float64
+            else:
+                var_diag = X.var(dim=0, unbiased=False)         # (D,)
+                cov_c = torch.diag(var_diag)                    # (D, D)
+
+            cov_c = cov_c.to(self.device).float()
+
             cov_c = self._shrink_cov(cov_c, alpha=self.args.cov_shrink_alpha)
-            # invert
             try:
                 invcov = torch.linalg.pinv(cov_c)
             except Exception:
-                invcov = torch.eye(cov_c.size(0), device=self.device)  # fallback
+                invcov = torch.eye(D, device=self.device)
 
             self.class_means[c] = mean_c
             self.class_invcovs[c] = invcov
