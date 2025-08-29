@@ -48,7 +48,7 @@ def get_parser() -> ArgumentParser:
     parser.add_argument('--lr_steps', type=int, nargs='*', default=[70, 90])
 
     parser.add_argument('--cc', type=int, default=1)
-    parser.add_argument('--cov_weight', type=float, default=0.1)
+    parser.add_argument('--cov_weight', type=float, default=0.01)
     parser.add_argument('--cov_shrink_alpha', type=float, default=0.5)
     return parser
 
