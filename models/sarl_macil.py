@@ -46,18 +46,22 @@ def get_parser() -> ArgumentParser:
     parser.add_argument('--warmup_epochs', type=int, default=5)
     parser.add_argument('--use_lr_scheduler', type=int, default=1)
     parser.add_argument('--lr_steps', type=int, nargs='*', default=[70, 90])
+
+    parser.add_argument('--cc', type=int, default=0)
+    parser.add_argument('--cov_weight', type=float, default=0.1)
+    parser.add_argument('--cov_shrink_alpha', type=float, default=0.1)
     return parser
 
 
 # =============================================================================
 # Mean-ER
 # =============================================================================
-class SARLMACIL(ContinualModel):
-    NAME = 'sarl_macil'
+class SARL(ContinualModel):
+    NAME = 'sarl'
     COMPATIBILITY = ['class-il', 'domain-il', 'task-il', 'general-continual']
 
     def __init__(self, backbone, loss, args, transform):
-        super(SARLMACIL, self).__init__(backbone, loss, args, transform)
+        super(SARL, self).__init__(backbone, loss, args, transform)
         self.buffer = Buffer(self.args.buffer_size, self.device)
 
         # Initialize plastic and stable model
@@ -96,35 +100,135 @@ class SARLMACIL(ContinualModel):
         self.dist_mat = torch.zeros(num_classes_dict[args.dataset], num_classes_dict[args.dataset]).to(self.device)
         self.class_dict = class_dict[args.dataset]
 
-    def _extract_features(self, data_loader, model):
-        model.eval()
-        embedding_list = []
+    # -------------------------
+    # Covariance Calibration utils
+    # -------------------------
+    def _shrink_cov(self, cov, alpha=0.1):
+        """
+        Simple Ledoit-Wolf-ish shrinkage toward diagonal/identity:
+        cov: torch.Tensor (D,D)
+        alpha: shrinkage strength in [0,1]
+        returns: shrunk cov (D,D)
+        """
+        # ensure double precision for stability
+        cov = cov.double()
+        diag = torch.diag(torch.diagonal(cov)).to(cov.device)
+        shrunk = (1 - alpha) * cov + alpha * diag
+        # add small eps to diagonal for numerical stability
+        shrunk = shrunk + torch.eye(shrunk.size(0), device=shrunk.device, dtype=shrunk.dtype) * 1e-6
+        return shrunk.float()
+
+    def _compute_buffer_class_stats(self):
+        """
+        Compute class means and inverse covariances from the rehearsal buffer using self.net_old.
+        Store:
+          - self.class_means: tensor (C, D)
+          - self.class_invcovs: tensor (C, D, D)
+        Only compute for classes in self.learned_classes.
+        """
+        if self.net_old is None or self.buffer.is_empty():
+            return
+
+        # get all buffer data
+        buf_inputs, buf_labels, _ = self.buffer.get_all_data(transform=self.transform)
+        # create loader
+        buf_ds = torch.utils.data.TensorDataset(buf_inputs, buf_labels)
+        loader = DataLoader(buf_ds, batch_size=self.args.batch_size, shuffle=False, num_workers=0)
+
+        # collect per-class features using net_old
+        feat_dict = {}
         with torch.no_grad():
-            for data_batch in data_loader:
-                inputs = data_batch[0].to(self.device)
+            self.net_old.eval()
+            for inputs, labels in loader:
+                inputs, labels = inputs.to(self.device), labels.to(self.device)
+                _, activations = self.net_old(inputs, return_activations=True)
+                feats = F.normalize(activations['feat']).detach().cpu()
+                labels_cpu = labels.cpu()
+                for i, lab in enumerate(labels_cpu):
+                    lab = int(lab.item())
+                    if lab not in feat_dict:
+                        feat_dict[lab] = []
+                    feat_dict[lab].append(feats[i])
 
-                _, activations = model(inputs, return_activations=True)
+        # build class_means & covs
+        D = next(iter(feat_dict.values()))[0].shape[0] if len(feat_dict) > 0 else self.op.size(1)
+        C = max(self.learned_classes) + 1 if len(self.learned_classes) > 0 else 0
 
-                feats = activations['feat']
+        # initialize containers for all classes (we'll fill known ones)
+        self.class_means = torch.zeros((max(1, C), D), device=self.device)
+        self.class_invcovs = torch.zeros((max(1, C), D, D), device=self.device)
 
-                feats = F.normalize(feats)
-                embedding_list.append(feats.cpu())
+        for c in self.learned_classes:
+            if c not in feat_dict or len(feat_dict[c]) == 0:
+                # fallback: use prototype as mean and identity cov
+                self.class_means[c] = self.op[c].detach()
+                self.class_invcovs[c] = torch.eye(D, device=self.device)
+                continue
 
-        return torch.cat(embedding_list, dim=0)
+            feats_c = torch.stack(feat_dict[c], dim=0)  # (Nc, D)
+            mean_c = feats_c.mean(dim=0).to(self.device)
+            # covariance: use torch.cov on transpose (requires float64 for torch.cov)
+            cov_c = torch.tensor(feats_c, dtype=torch.float64).T
+            cov_c = torch.cov(cov_c).to(self.device)  # (D, D)
+            cov_c = cov_c.float()
+            # shrink
+            cov_c = self._shrink_cov(cov_c, alpha=self.args.cov_shrink_alpha)
+            # invert
+            try:
+                invcov = torch.linalg.pinv(cov_c)
+            except Exception:
+                invcov = torch.eye(cov_c.size(0), device=self.device)  # fallback
 
-    def _displacement(self, old_embeds, new_embeds, old_prototypes, sigma=1.0):
-        old_embeds = old_embeds.to(self.device)
-        new_embeds = new_embeds.to(self.device)
-        old_prototypes = old_prototypes.to(self.device)
+            self.class_means[c] = mean_c
+            self.class_invcovs[c] = invcov
 
-        DY = new_embeds - old_embeds  # Shape: (N, D)
-        dist = torch.cdist(old_prototypes, old_embeds, p=2) ** 2
+    def _mahalanobis_loss_from_buffer(self):
+        """
+        Compute Mahalanobis loss on buffer data using stored class_means and class_invcovs.
+        Return scalar loss (torch.Tensor).
+        We compute per-sample (x - mu_c)^T invcov_c (x - mu_c) for the true class c, and average.
+        """
+        if self.buffer.is_empty() or not hasattr(self, 'class_invcovs') or not hasattr(self, 'class_means'):
+            return torch.tensor(0.0, device=self.device)
 
-        W = torch.exp(-dist / (2 * sigma ** 2)) + 1e-5  # (C, N)
-        W = W / W.sum(dim=1, keepdim=True)  # (C, N)
-        displacement = torch.bmm(W.unsqueeze(1), DY.unsqueeze(0).expand(W.size(0), *DY.size()))[:, 0, :]
+        buf_inputs, buf_labels, _ = self.buffer.get_all_data(transform=self.transform)
+        buf_ds = torch.utils.data.TensorDataset(buf_inputs, buf_labels)
+        loader = DataLoader(buf_ds, batch_size=self.args.minibatch_size, shuffle=False, num_workers=0)
 
-        return displacement  # Tensor (C, D)
+        total_loss = 0.0
+        total_cnt = 0
+        with torch.no_grad():  # features can be computed without grad (we compute loss with grad later?)
+            # IMPORTANT: we need features from current net (so grad flows). So do not wrap entire loop in no_grad.
+            pass
+
+        # we compute features with grad enabled so the Mahalanobis loss will backprop into net's params
+        for inputs, labels in loader:
+            inputs, labels = inputs.to(self.device), labels.to(self.device)
+            outputs, activations = self.net(inputs, return_activations=True)
+            feats = F.normalize(activations['feat'])  # (B, D)
+
+            batch_loss = torch.tensor(0.0, device=self.device)
+            valid_cnt = 0
+            for i, lab in enumerate(labels):
+                lab_i = int(lab.item())
+                if lab_i >= self.class_means.size(0):
+                    # skip if no stats
+                    continue
+                mu = self.class_means[lab_i]  # (D,)
+                invcov = self.class_invcovs[lab_i]  # (D,D)
+                diff = (feats[i] - mu).unsqueeze(0)  # (1, D)
+                # (1,D) @ (D,D) -> (1,D) ; then @ (D,1) -> scalar
+                m = diff @ invcov @ diff.t()
+                batch_loss = batch_loss + m.squeeze()
+                valid_cnt += 1
+
+            if valid_cnt > 0:
+                total_loss += batch_loss
+                total_cnt += valid_cnt
+
+        if total_cnt == 0:
+            return torch.tensor(0.0, device=self.device)
+        return (total_loss / float(total_cnt))
 
     def observe(self, inputs, labels, not_aug_inputs):
         real_batch_size = inputs.shape[0]
@@ -139,6 +243,19 @@ class SARLMACIL(ContinualModel):
 
             buff_ce_loss = self.loss(buff_out, buf_labels)
             loss += reg_loss + buff_ce_loss
+
+            # ---------------------------
+            # Covariance Calibration Loss
+            # ---------------------------
+            if getattr(self.args, 'cc', 0) == 1 and self.current_task > 0:
+                cov_loss = self._mahalanobis_loss_from_buffer()
+                # cov_loss is average Mahalanobis scalar; add weighted to main loss (no detach)
+                loss = loss + self.args.cov_weight * cov_loss
+                if hasattr(self, 'writer'):
+                    try:
+                        self.writer.add_scalar(f'Task {self.current_task}/cov_loss', cov_loss.item(), self.iteration)
+                    except Exception:
+                        pass
 
             # Regularization loss on Class Prototypes
             if self.current_task > 0:
@@ -295,29 +412,20 @@ class SARLMACIL(ContinualModel):
 
         self.eval_prototypes = True
         self.flag = True
+        self.current_task += 1
+        self.net.eval()
 
         # Save old model
         self.net_old = deepcopy(self.net)
         self.net_old.eval()
 
-        if self.current_task > 0:
-            print('=' * 50)
-            print(f'Applying Mean Shift Compensation for Task {self.current_task}')
-
-            old_embeds = self._extract_features(dataset.train_loader, self.net_old)
-            new_embeds = self._extract_features(dataset.train_loader, self.net)
-            old_prototypes = self.op[self.learned_classes]
-
-            gap = self._displacement(old_embeds, new_embeds, old_prototypes)
-
-            print(f'Correcting {len(self.learned_classes)} old prototypes...')
-            self.op[self.learned_classes] += gap
-
-            print('Mean Shift Compensation Done.')
-            print('=' * 50)
-
-        self.current_task += 1
-        self.net.eval()
+        # If covariance calibration enabled, compute class means & inverse covariances from buffer (using net_old)
+        if getattr(self.args, 'cc', 0) == 1 and not self.buffer.is_empty():
+            print("Computing class statistics (means + invcov) from buffer using net_old for CC...")
+            # ensure learned_classes is non-empty; if buffer has classes not in learned_classes, include them
+            # (we assume learned_classes is up-to-date)
+            self._compute_buffer_class_stats()
+            print("Done computing class statistics for CC.")
 
         # =====================================
         # Buffer Pass
