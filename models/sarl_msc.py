@@ -312,6 +312,7 @@ class SARLMSC(ContinualModel):
 
             print(f'Correcting {len(self.learned_classes)} old prototypes...')
             self.op[self.learned_classes] += gap
+            self.op[self.learned_classes] = F.normalize(self.op[self.learned_classes], p=2, dim=1)
 
             print('Mean Shift Compensation Done.')
             print('=' * 50)
