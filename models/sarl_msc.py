@@ -371,7 +371,7 @@ class SARLMSC(ContinualModel):
         self.flag = True
         self.get_optimizer()
 
-        self._setup_task_targets()
+        self._setup_task_targets(dataset)
 
         if not self.buffer.is_empty():
             self.net.train()
