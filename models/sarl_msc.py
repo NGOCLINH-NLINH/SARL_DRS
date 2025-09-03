@@ -46,6 +46,9 @@ def get_parser() -> ArgumentParser:
     parser.add_argument('--warmup_epochs', type=int, default=5)
     parser.add_argument('--use_lr_scheduler', type=int, default=1)
     parser.add_argument('--lr_steps', type=int, nargs='*', default=[70, 90])
+
+    parser.add_argument('--msc_damp_factor', type=float, default=0.1,
+                        help='Factor to dampen the calculated shift vector.')
     return parser
 
 
@@ -118,54 +121,52 @@ class SARLMSC(ContinualModel):
 
         return torch.cat(embedding_list, dim=0), torch.cat(label_list, dim=0)
 
-    def _setup_task_targets(self):
+    def _setup_task_targets(self, dataset):
         if self.current_task == 0:
             return
 
         print("=" * 50)
-        print(f"Task {self.current_task}: Calculating shift targets for old classes...")
+        print(f"Task {self.current_task}: Calculating shift targets using MACIL/MSC logic...")
 
-        if self.buffer.is_empty() or self.net_old is None:
-            print("Warning: Buffer or net_old is not available. Cannot calculate shift targets.")
+        if self.net_old is None:
+            print("Warning: net_old is not available. Cannot calculate shift targets.")
             self.target_prototypes = self.op.clone()
             return
 
-        # Using data from buffer to calculate shift
-        buf_inputs, buf_labels, _ = self.buffer.get_all_data()
-        buf_dataset = torch.utils.data.TensorDataset(buf_inputs, buf_labels)
-        buf_loader = DataLoader(buf_dataset, batch_size=self.args.batch_size, shuffle=False)
+        train_loader = dataset.train_loader
 
-        old_embeds, old_labels = self._extract_features_with_labels(buf_loader, self.net_old)
-        new_embeds, _ = self._extract_features_with_labels(buf_loader, self.net)
+        old_embeds, _ = self._extract_features_with_labels(train_loader, self.net_old)
+        new_embeds, _ = self._extract_features_with_labels(train_loader, self.net)
+
+        learned_classes_tensor = torch.tensor(self.learned_classes, device=self.device).long()
+        old_prototypes = self.op[learned_classes_tensor]
+
+        gap = self._displacement(old_embeds, new_embeds, old_prototypes)
 
         self.target_prototypes = self.op.clone()
-
-        for c in self.learned_classes:
-            old_feats_c = old_embeds[old_labels == c]
-            new_feats_c = new_embeds[old_labels == c]
-
-            if len(old_feats_c) > 0 and len(new_feats_c) > 0:
-                gap_c = new_feats_c.mean(dim=0) - old_feats_c.mean(dim=0)
-                self.target_prototypes[c] += gap_c.to(self.device)
+        self.target_prototypes[learned_classes_tensor] += gap
 
         self.target_prototypes = F.normalize(self.target_prototypes, p=2, dim=1)
 
         print("Shift targets calculated and stored for the current task.")
         print("=" * 50)
 
-    # def _displacement(self, old_embeds, new_embeds, old_prototypes, sigma=1.0):
-    #     old_embeds = old_embeds.to(self.device)
-    #     new_embeds = new_embeds.to(self.device)
-    #     old_prototypes = old_prototypes.to(self.device)
-    #
-    #     DY = new_embeds - old_embeds  # Shape: (N, D)
-    #     dist = torch.cdist(old_prototypes, old_embeds, p=2) ** 2
-    #
-    #     W = torch.exp(-dist / (2 * sigma ** 2)) + 1e-5  # (C, N)
-    #     W = W / W.sum(dim=1, keepdim=True)  # (C, N)
-    #     displacement = torch.bmm(W.unsqueeze(1), DY.unsqueeze(0).expand(W.size(0), *DY.size()))[:, 0, :]
-    #
-    #     return displacement  # Tensor (C, D)
+    def _displacement(self, old_embeds, new_embeds, old_prototypes, sigma=1.0):
+        old_embeds = old_embeds.to(self.device)
+        new_embeds = new_embeds.to(self.device)
+        old_prototypes = old_prototypes.to(self.device)
+
+        DY = new_embeds - old_embeds  # Shape: (N, D)
+
+        dist = torch.cdist(old_prototypes, old_embeds, p=2) ** 2  # Shape: (C, N)
+
+        W = torch.exp(-dist / (2 * sigma ** 2)) + 1e-5  # Shape: (C, N)
+        W = W / W.sum(dim=1, keepdim=True)
+
+        displacement = torch.bmm(W.unsqueeze(1), DY.unsqueeze(0).expand(W.size(0), *DY.size()))
+        displacement = displacement.squeeze(1)  # Shape: (C, D)
+
+        return displacement
 
     def observe(self, inputs, labels, not_aug_inputs):
         real_batch_size = inputs.shape[0]
@@ -338,10 +339,8 @@ class SARLMSC(ContinualModel):
             self.op[learned_classes_tensor] = self.target_prototypes[learned_classes_tensor].clone()
 
         print("Calculating official prototypes for new classes.")
-
         self.op_sum.zero_()
         self.sample_counts.zero_()
-
         new_classes_in_this_task = []
         with torch.no_grad():
             for data in dataset.train_loader:
@@ -349,17 +348,14 @@ class SARLMSC(ContinualModel):
                 inputs, labels = inputs.to(self.device), labels.to(self.device)
                 _, activations = self.net(inputs, return_activations=True)
                 feat = F.normalize(activations['feat'])
-
                 for class_label in torch.unique(labels):
                     c = class_label.item()
                     if c not in self.learned_classes:
                         if c not in new_classes_in_this_task:
                             new_classes_in_this_task.append(c)
-
                         mask = (labels == class_label)
                         self.op_sum[c] += feat[mask].sum(dim=0)
                         self.sample_counts[c] += mask.sum()
-
         for c in new_classes_in_this_task:
             if self.sample_counts[c] > 0:
                 self.op[c] = self.op_sum[c] / self.sample_counts[c]
@@ -373,7 +369,7 @@ class SARLMSC(ContinualModel):
         self.current_task += 1
         self.eval_prototypes = True
         self.flag = True
-        self.get_optimizer()  # Reset optimizer
+        self.get_optimizer()
 
         self._setup_task_targets()
 
